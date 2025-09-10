@@ -1,2 +1,2 @@
-# ITSC-4155-Project
-This is the first iteration of a start-up for a crypto market alert system. 
+# Market Geek
+This is the first iteration of a start-up for a crypto market alert system. It will provide analytics, statistics, and many other features to help traders make more money (we can make money by taking a percentage if it auto sells [this might be greedy and a turn off though]). The idea behind this is being brought to life and the goal for our first sprint is to make a working barebones application that can be presented to investors.
