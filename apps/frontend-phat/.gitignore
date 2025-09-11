@@ -1,0 +1,12 @@
+﻿# deps & caches
+node_modules/
+.vite/
+dist/
+build/
+
+# logs
+*.log
+
+# system
+.DS_Store
+Thumbs.db
