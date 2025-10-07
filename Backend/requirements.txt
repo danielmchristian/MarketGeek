@@ -5,3 +5,5 @@ passlib[bcrypt]
 sqlalchemy
 psycopg2
 python-multipart
+asyncpg
+python-dotenv
