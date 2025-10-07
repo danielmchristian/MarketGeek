@@ -1,0 +1,8 @@
+services:
+  pgcheck:
+    build: .
+    env_file: .env
+    # optional: mount CA bundle if you want verify-ca/full
+    volumes:
+      - ./certs:/certs:ro
+    # (you can omit "command" because Dockerfile CMD already runs postgres.py)

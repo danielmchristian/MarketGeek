@@ -1,0 +1,10 @@
+# env & secrets
+.env
+.env.*           # .env.prod, .env.dev, etc.
+certs/
+*.pem
+*.key
+
+# OS/editor noise (optional)
+.DS_Store
+*.log
