@@ -1,0 +1,16 @@
+# fastapi-react-auth/docker-compose.yml
+version: "3.9"
+services:
+  db:
+    image: postgres:17
+    environment:
+      - POSTGRES_USER='adminMG'
+      - POSTGRES_PASSWORD= 'adminPass'
+      - POSTGRES_DB= 'MGFirstDB'
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+
+volumes:
+  postgres_data:
