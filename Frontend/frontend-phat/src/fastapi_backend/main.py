@@ -439,6 +439,12 @@ async def system_status():
         },
         "version": "1.0.0"
     }
+        # near the top with other imports
+from routers.fetch import router as fetch_router   # near other imports
+
+# after app = FastAPI(...) and CORS
+app.include_router(fetch_router)
+
 
 if __name__ == "__main__":
     # Run the server
@@ -449,3 +455,5 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+    
+
