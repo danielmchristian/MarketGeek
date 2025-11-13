@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
+import LoginButton from './components/LoginButton';
 import { Alert, AlertDescription } from './components/ui/alert';
 import { Separator } from './components/ui/separator';
 import { DashboardOverview } from './components/DashboardOverview';
@@ -139,6 +140,7 @@ export default function App() {
                 <p className="text-sm font-medium text-slate-900">Demo User</p>
                 <p className="text-xs text-slate-500">Compliance Analyst</p>
               </div>
+              <LoginButton />
               <Button 
                 variant="outline" 
                 size="sm"
