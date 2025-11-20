@@ -1,18 +1,22 @@
 # Backend/fastapi_app/storage.py
 from typing import List
-from .schemas import Trade, Alert
+from .schemas import TradeIn, Alert
 
-trades: List[Trade] = []
-alerts: List[Alert] = []
+_trades: List[TradeIn] = []
+_alerts: List[Alert] = []
 
-def add_trades(new_trades: List[Trade]):
-    trades.extend(new_trades)
+def add_trades(new_trades: List[TradeIn]):
+    _trades.extend(new_trades)
 
-def get_trades() -> List[Trade]:
-    return trades
+def get_trades() -> List[TradeIn]:
+    return list(_trades)
 
 def add_alerts(new_alerts: List[Alert]):
-    alerts.extend(new_alerts)
+    _alerts.extend(new_alerts)
 
 def get_alerts() -> List[Alert]:
-    return alerts
+    return list(_alerts)
+
+def reset_all():
+    _trades.clear()
+    _alerts.clear()

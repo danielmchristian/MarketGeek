@@ -1,32 +1,38 @@
 # Backend/fastapi_app/schemas.py
 from pydantic import BaseModel
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal
 
-class Trade(BaseModel):
+class TradeIn(BaseModel):
     trade_id: str
-    timestamp: datetime
-    token: str
-    tx_hash: str
-    from_address: str
-    to_address: str
-    side: str           # "buy" or "sell"
-    quantity: float
-    price: float        # price per unit
-    venue: Optional[str] = None
+    timestamp: datetime          # ISO string from ingestion node
+    token: str                   # e.g. "BTCUSDT"
+    from_address: str            # maker / seller / wallet
+    to_address: str              # taker / buyer / wallet
+    amount: float                # quantity of base asset
+    price: float                 # price per unit in quote asset / USD
+    exchange: str                # "Binance", "UniswapV3", etc.
+    tx_hash: str                 # tx id or trade id
+
+class IngestRequest(BaseModel):
+    trades: List[TradeIn]
 
 class IngestResponse(BaseModel):
-    ingested_count: int
+    success: bool
+    processed_count: int
+
 
 class Alert(BaseModel):
     alert_id: str
-    type: str           # "self-trade", "wash-sale", "cycle", "volume-anomaly"
-    severity: str       # "low", "medium", "high"
-    message: str
-    token: Optional[str] = None
-    wallet: Optional[str] = None
-    trade_ids: List[str] = []
+    type: Literal["self_trade", "wash_trading", "volume_spike", "price_manipulation"]
+    severity: Literal["high", "medium", "low"]
+    confidence: float
+    token: str
+    description: str
     timestamp: datetime
+    affected_addresses: List[str]
+    volume: str
+    exchanges: List[str]
 
 class StatisticsOverview(BaseModel):
     total_trades: int
@@ -34,3 +40,23 @@ class StatisticsOverview(BaseModel):
     wallets_monitored: int
     tokens_monitored: int
     wash_sales_detected: int
+class VolumePoint(BaseModel):
+    bucket: datetime         # start time of the bucket
+    trade_count: int
+    total_volume: float      # notional = amount * price
+    alert_count: int         # how many alerts in this bucket
+
+
+class VolumeSeries(BaseModel):
+    points: List[VolumePoint]
+class TokenSummary(BaseModel):
+    symbol: str
+    name: str
+    price: str
+    change24h: str
+    volume24h: str
+    riskScore: int
+    alerts: int
+    status: str  # "high_risk" | "medium_risk" | "low_risk"
+    lastAlert: str
+    exchanges: List[str]
