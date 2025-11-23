@@ -6,23 +6,14 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Alert, AlertDescription } from './ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { supabase } from '../utils/supabase/client';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { firebaseAuth } from '../utils/firebase/auth';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 
-type SignUpForm = {
-  email: string;
-  password: string;
-  name: string;
-  organization: string;
-};
+interface AuthComponentProps {
+  onSuccess?: () => void;
+}
 
-type SignInForm = {
-  email: string;
-  password: string;
-};
-
-export function AuthComponent() {
+export function AuthComponent({ onSuccess }: AuthComponentProps = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [signUpData, setSignUpData] = useState<SignUpForm>({
@@ -41,41 +32,49 @@ export function AuthComponent() {
     setIsLoading(true);
     setError('');
 
+    // Safety timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      console.log('⏰ Loading timeout - resetting state');
+      setIsLoading(false);
+      setError('Request timed out. Please try again.');
+    }, 10000); // 10 second timeout
+
     try {
-      // Call your Supabase Edge Function for sign-up
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-6a524163/signup`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify(signUpData),
-        },
+      console.log('🚀 Starting Firebase signup...');
+      
+      // Use Firebase directly
+      const signUpResult = await firebaseAuth.signUp(
+        signUpData.email, 
+        signUpData.password, 
+        { name: signUpData.name, organization: signUpData.organization }
       );
 
-      const result = await response.json().catch(() => ({}));
+      console.log('📥 Firebase signup result:', signUpResult);
 
-      if (!response.ok) {
-        throw new Error((result as any)?.error || 'Sign up failed');
+      if (signUpResult.error) {
+        console.log('❌ Firebase signup error:', signUpResult.error.message);
+        // Handle specific Firebase errors
+        const errorMessage = signUpResult.error.message;
+        if (errorMessage.includes('email-already-in-use')) {
+          setError('Account already exists. Please sign in instead.');
+        } else if (errorMessage.includes('weak-password')) {
+          setError('Password is too weak. Please use at least 6 characters.');
+        } else if (errorMessage.includes('invalid-email')) {
+          setError('Please enter a valid email address.');
+        } else {
+          setError(errorMessage);
+        }
+        return;
       }
 
-      // Auto sign-in after successful signup
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: signUpData.email,
-        password: signUpData.password,
-      });
-
-      if (signInError) {
-        throw signInError;
-      }
-
-      
-    } catch (error: any) {
-      console.error('Sign up error:', error);
-      setError(error?.message || 'Sign up failed');
+      console.log('✅ Firebase signup successful - calling onSuccess');
+      onSuccess?.();
+    } catch (err: any) {
+      console.error('💥 Sign up error:', err);
+      setError(err.message || 'Sign up failed');
     } finally {
+      clearTimeout(loadingTimeout);
+      console.log('🏁 Setting loading to false');
       setIsLoading(false);
     }
   };
@@ -86,18 +85,32 @@ export function AuthComponent() {
     setError('');
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: signInData.email,
-        password: signInData.password,
-      });
+      // Use Firebase directly
+      const signInResult = await firebaseAuth.signInWithPassword(
+        signInData.email,
+        signInData.password
+      );
 
-      if (error) {
-        throw error;
+      if (signInResult.error) {
+        // Handle specific Firebase errors
+        const errorMessage = signInResult.error.message;
+        if (errorMessage.includes('user-not-found')) {
+          setError('No account found with this email. Please sign up first.');
+        } else if (errorMessage.includes('wrong-password')) {
+          setError('Incorrect password. Please try again.');
+        } else if (errorMessage.includes('invalid-email')) {
+          setError('Please enter a valid email address.');
+        } else {
+          setError(errorMessage);
+        }
+        return;
       }
 
-    } catch (error: any) {
-      console.error('Sign in error:', error);
-      setError(error?.message || 'Sign in failed');
+      console.log('✅ Firebase signin successful');
+      onSuccess?.();
+    } catch (err: any) {
+      console.error('Sign in error:', err);
+      setError(err.message || 'Sign in failed');
     } finally {
       setIsLoading(false);
     }

@@ -14,6 +14,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
+
+import LoginButton from './components/LoginButton';
+import { Alert, AlertDescription } from './components/ui/alert';
+
 import { Separator } from './components/ui/separator';
 
 import { DashboardOverview } from './components/DashboardOverview';
@@ -24,12 +28,44 @@ import { ComplianceReports } from './components/ComplianceReports';
 import { AlertsPanel } from './components/AlertsPanel';
 
 import { apiClient, type SystemHealth, type Alert as ApiAlert } from './utils/api';
+import { firebaseAuth } from './utils/firebase/auth';
+import { User, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db, auth } from './utils/firebase/config';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [liveAlerts, setLiveAlerts] = useState<ApiAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<{ name?: string; organization?: string } | null>(null);
+
+  // Monitor Firebase auth state
+  useEffect(() => {
+    console.log('🚀 Setting up Firebase auth listener...');
+    
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('🔥 Auth state changed:', user?.email || 'null');
+      setCurrentUser(user);
+      
+      if (user) {
+        console.log('👤 User authenticated:', user.email);
+        // Use immediate fallback for better reliability
+        const fallbackProfile = { 
+          name: user.displayName || user.email?.split('@')[0] || 'User', 
+          organization: 'MarketGeek User' 
+        };
+        console.log('✅ Setting profile:', fallbackProfile);
+        setUserProfile(fallbackProfile);
+      } else {
+        console.log('🚪 User signed out');
+        setUserProfile(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Load initial data and setup real-time monitoring
   useEffect(() => {
@@ -151,10 +187,26 @@ export default function App() {
 
             <div className="flex items-center space-x-4">
               <div className="text-right">
-                <p className="text-sm font-medium text-slate-900">Demo User</p>
-                <p className="text-xs text-slate-500">Compliance Analyst</p>
+                <p className="text-sm font-medium text-slate-900">
+                  {currentUser && userProfile 
+                    ? userProfile.name || currentUser.email?.split('@')[0] || 'User'
+                    : 'Demo User'
+                  }
+                </p>
+                <p className="text-xs text-slate-500">
+                  {currentUser && userProfile && userProfile.organization 
+                    ? userProfile.organization 
+                    : 'Compliance Analyst'
+                  }
+                </p>
               </div>
-              <Button variant="outline" size="sm" onClick={loadDashboardData} disabled={isLoading}>
+              <LoginButton />
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={loadDashboardData}
+                disabled={isLoading}
+
                 Refresh Data
               </Button>
             </div>
