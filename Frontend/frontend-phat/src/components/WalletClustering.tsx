@@ -1,23 +1,106 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Network, Share2, AlertTriangle, Eye, Filter, Search, Download } from 'lucide-react';
+import {
+  Users,
+  Network,
+  Share2,
+  AlertTriangle,
+  Eye,
+  Search,
+  Download,
+  Activity,
+} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { apiClient, type WalletCycle } from '../utils/api';
+
+type ClusterState = {
+  cycles: WalletCycle[];
+  isLoading: boolean;
+  lastUpdated: string | null;
+};
 
 export function WalletClustering() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterRisk, setFilterRisk] = useState('all');
-  const [clusterData, setClusterData] = useState({
-    cycles: [] as WalletCycle[],
-    isLoading: true
+  const [filterRisk, setFilterRisk] = useState<'all' | 'high_risk' | 'medium_risk' | 'low_risk'>(
+    'all'
+  );
+  const [clusterData, setClusterData] = useState<ClusterState>({
+    cycles: [],
+    isLoading: true,
+    lastUpdated: null,
   });
 
-  // Load wallet clustering data from API
+  // ---------------- Helpers ----------------
+
+  const normalizeCycles = (raw: unknown): WalletCycle[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw as WalletCycle[];
+  };
+
+  const getRiskLevel = (
+    confidence: number | undefined | null
+  ): 'high_risk' | 'medium_risk' | 'low_risk' => {
+    const value = typeof confidence === 'number' ? confidence : 0;
+    if (value >= 80) return 'high_risk';
+    if (value >= 60) return 'medium_risk';
+    return 'low_risk';
+  };
+
+  const getRiskBadgeVariant = (riskLevel: string) => {
+    switch (riskLevel) {
+      case 'high_risk':
+        return 'destructive';
+      case 'medium_risk':
+        return 'secondary';
+      case 'low_risk':
+        return 'outline';
+      default:
+        return 'outline';
+    }
+  };
+
+  const getRiskDisplayName = (riskLevel: string) => {
+    switch (riskLevel) {
+      case 'high_risk':
+        return 'High Risk';
+      case 'medium_risk':
+        return 'Medium Risk';
+      case 'low_risk':
+        return 'Low Risk';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  const formatVolume = (volume: number | undefined | null) => {
+    const v = typeof volume === 'number' ? volume : 0;
+    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`;
+    return `$${v.toFixed ? v.toFixed(2) : v}`;
+  };
+
+  const safeWalletCount = (wallets: string[] | undefined | null) =>
+    Array.isArray(wallets) ? wallets.length : 0;
+
+  const safeWalletList = (wallets: string[] | undefined | null) =>
+    Array.isArray(wallets) ? wallets : [];
+
+  const safeDateString = (value: string | undefined | null) => {
+    const d = value ? new Date(value) : new Date(NaN);
+    return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleString();
+  };
+
+  const safeDateOnly = (value: string | undefined | null) => {
+    const d = value ? new Date(value) : new Date(NaN);
+    return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString();
+  };
+
+  // ---------------- Data loading ----------------
+
   useEffect(() => {
     loadClusterData();
   }, []);
@@ -25,82 +108,99 @@ export function WalletClustering() {
   const loadClusterData = async () => {
     try {
       setClusterData(prev => ({ ...prev, isLoading: true }));
-      const { cycles } = await apiClient.detectCycles();
+
+      const resp = await apiClient.detectCycles();
+      const safeCycles = normalizeCycles((resp as any)?.cycles);
+
       setClusterData({
-        cycles,
-        isLoading: false
+        cycles: safeCycles,
+        isLoading: false,
+        lastUpdated: new Date().toISOString(),
       });
     } catch (error) {
       console.error('Failed to load cluster data:', error);
-      setClusterData(prev => ({ ...prev, isLoading: false }));
+      setClusterData(prev => ({
+        ...prev,
+        isLoading: false,
+        // keep previous lastUpdated so UI doesn’t look “dead”
+      }));
     }
   };
 
-  const filteredClusters = clusterData.cycles.filter(cycle => {
-    const matchesSearch = cycle.cycle_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         cycle.token.toLowerCase().includes(searchTerm.toLowerCase());
-    const riskLevel = cycle.confidence > 80 ? 'high_risk' : cycle.confidence > 60 ? 'medium_risk' : 'low_risk';
+  // ---------------- Derived values ----------------
+
+  const cyclesArray = Array.isArray(clusterData.cycles) ? clusterData.cycles : [];
+
+  const filteredClusters = cyclesArray.filter(cycle => {
+    const id = (cycle as any).cycle_id ?? (cycle as any).cycleId ?? '';
+    const token = (cycle as any).token ?? '';
+
+    const idStr = String(id).toLowerCase();
+    const tokenStr = String(token).toLowerCase();
+
+    const matchesSearch =
+      idStr.includes(searchTerm.toLowerCase()) ||
+      tokenStr.includes(searchTerm.toLowerCase());
+
+    const riskLevel = getRiskLevel((cycle as any).confidence);
     const matchesRisk = filterRisk === 'all' || riskLevel === filterRisk;
+
     return matchesSearch && matchesRisk;
   });
 
-  const getRiskLevel = (confidence: number) => {
-    if (confidence > 80) return 'high_risk';
-    if (confidence > 60) return 'medium_risk';
-    return 'low_risk';
-  };
-
-  const getRiskBadgeVariant = (riskLevel: string) => {
-    switch (riskLevel) {
-      case 'high_risk': return 'destructive';
-      case 'medium_risk': return 'secondary';
-      case 'low_risk': return 'outline';
-      default: return 'outline';
-    }
-  };
-
-  const getRiskDisplayName = (riskLevel: string) => {
-    switch (riskLevel) {
-      case 'high_risk': return 'High Risk';
-      case 'medium_risk': return 'Medium Risk';
-      case 'low_risk': return 'Low Risk';
-      default: return 'Unknown';
-    }
-  };
-
-  const formatVolume = (volume: number) => {
-    if (volume >= 1000000) return `$${(volume / 1000000).toFixed(1)}M`;
-    if (volume >= 1000) return `$${(volume / 1000).toFixed(1)}K`;
-    return `$${volume}`;
-  };
-
   const calculateStats = () => {
-    const highRiskClusters = clusterData.cycles.filter(c => c.confidence > 80).length;
-    const totalWallets = clusterData.cycles.reduce((sum, c) => sum + c.wallets.length, 0);
-    const totalConnections = clusterData.cycles.length * 5; // Estimate connections
+    const highRiskClusters = cyclesArray.filter(
+      c => getRiskLevel((c as any).confidence) === 'high_risk'
+    ).length;
+    const totalWallets = cyclesArray.reduce(
+      (sum, c) => sum + safeWalletCount((c as any).wallets),
+      0
+    );
+    // rough proxy for “connections” – fine for demo to show network size
+    const totalConnections = cyclesArray.length * 5;
 
     return {
-      totalClusters: clusterData.cycles.length,
+      totalClusters: cyclesArray.length,
       monitoredWallets: totalWallets,
       networkConnections: totalConnections,
-      highRiskClusters
+      highRiskClusters,
     };
   };
 
   const stats = calculateStats();
+  const lastUpdatedDisplay = clusterData.lastUpdated
+    ? new Date(clusterData.lastUpdated).toLocaleTimeString()
+    : 'N/A';
+
+  // ---------------- Render ----------------
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header + live engine status */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Wallet Clustering</h2>
-          <p className="text-slate-600">Graph-based analysis of wallet relationships and suspicious networks</p>
+          <p className="text-slate-600">
+            Graph-based detection of wallet rings and potential wash-trading networks
+          </p>
         </div>
-        <Button onClick={loadClusterData} disabled={clusterData.isLoading}>
-          <Download className="h-4 w-4 mr-2" />
-          {clusterData.isLoading ? 'Loading...' : 'Refresh Analysis'}
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex flex-col text-right text-xs text-slate-500">
+            <span className="font-medium text-slate-700 flex items-center gap-1 justify-end">
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${
+                  clusterData.isLoading ? 'bg-yellow-400' : 'bg-green-500'
+                }`}
+              />
+              Live Detection Engine
+            </span>
+            <span>Last updated: {lastUpdatedDisplay}</span>
+          </div>
+          <Button onClick={loadClusterData} disabled={clusterData.isLoading}>
+            <Download className="h-4 w-4 mr-2" />
+            {clusterData.isLoading ? 'Analyzing...' : 'Refresh Analysis'}
+          </Button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -112,10 +212,10 @@ export function WalletClustering() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {clusterData.isLoading ? '...' : stats.totalClusters}
+              {clusterData.isLoading ? '…' : stats.totalClusters}
             </div>
             <p className="text-xs text-slate-500">
-              {stats.highRiskClusters} flagged as suspicious
+              {stats.highRiskClusters} flagged as suspicious rings
             </p>
           </CardContent>
         </Card>
@@ -127,9 +227,9 @@ export function WalletClustering() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {clusterData.isLoading ? '...' : stats.monitoredWallets.toLocaleString()}
+              {clusterData.isLoading ? '…' : stats.monitoredWallets.toLocaleString()}
             </div>
-            <p className="text-xs text-slate-500">In detected clusters</p>
+            <p className="text-xs text-slate-500">Linked via suspicious trading patterns</p>
           </CardContent>
         </Card>
 
@@ -140,9 +240,9 @@ export function WalletClustering() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {clusterData.isLoading ? '...' : stats.networkConnections.toLocaleString()}
+              {clusterData.isLoading ? '…' : stats.networkConnections.toLocaleString()}
             </div>
-            <p className="text-xs text-slate-500">Identified relationships</p>
+            <p className="text-xs text-slate-500">Estimated transaction links analyzed</p>
           </CardContent>
         </Card>
 
@@ -153,9 +253,9 @@ export function WalletClustering() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {clusterData.isLoading ? '...' : stats.highRiskClusters}
+              {clusterData.isLoading ? '…' : stats.highRiskClusters}
             </div>
-            <p className="text-xs text-slate-500">Require immediate attention</p>
+            <p className="text-xs text-slate-500">Likely wash-trading or manipulation rings</p>
           </CardContent>
         </Card>
       </div>
@@ -168,14 +268,19 @@ export function WalletClustering() {
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
-                  placeholder="Search clusters..."
+                  placeholder="Search by cluster ID or token (e.g., SHIB, ETH)..."
                   className="pl-10"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={e => setSearchTerm(e.target.value)}
                 />
               </div>
             </div>
-            <Select value={filterRisk} onValueChange={setFilterRisk}>
+            <Select
+              value={filterRisk}
+              onValueChange={val =>
+                setFilterRisk(val as 'all' | 'high_risk' | 'medium_risk' | 'low_risk')
+              }
+            >
               <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Filter by risk" />
               </SelectTrigger>
@@ -197,24 +302,25 @@ export function WalletClustering() {
           <TabsTrigger value="analysis">Deep Analysis</TabsTrigger>
         </TabsList>
 
+        {/* -------- Cluster Overview -------- */}
         <TabsContent value="clusters" className="space-y-6">
-          {/* Cluster Cards */}
           <div className="grid gap-6">
             {clusterData.isLoading ? (
+              // Skeletons while loading
               <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
+                {[1, 2, 3].map(i => (
                   <Card key={i} className="animate-pulse">
                     <CardHeader>
-                      <div className="h-6 bg-slate-300 rounded w-1/3"></div>
-                      <div className="h-4 bg-slate-300 rounded w-1/2"></div>
+                      <div className="h-6 bg-slate-300 rounded w-1/3" />
+                      <div className="h-4 bg-slate-300 rounded w-1/2 mt-2" />
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-3">
                         <div className="grid grid-cols-4 gap-4">
-                          {[1, 2, 3, 4].map((j) => (
+                          {[1, 2, 3, 4].map(j => (
                             <div key={j} className="space-y-2">
-                              <div className="h-3 bg-slate-300 rounded"></div>
-                              <div className="h-4 bg-slate-300 rounded"></div>
+                              <div className="h-3 bg-slate-300 rounded" />
+                              <div className="h-4 bg-slate-300 rounded" />
                             </div>
                           ))}
                         </div>
@@ -224,21 +330,46 @@ export function WalletClustering() {
                 ))}
               </div>
             ) : filteredClusters.length > 0 ? (
-              filteredClusters.map((cluster) => {
-                const riskLevel = getRiskLevel(cluster.confidence);
+              filteredClusters.map(cluster => {
+                const confidence = (cluster as any).confidence;
+                const riskLevel = getRiskLevel(confidence);
+                const wallets = safeWalletList((cluster as any).wallets);
+                const token = (cluster as any).token ?? 'UNKNOWN';
+                const patternType = (cluster as any).pattern_type ?? 'unknown';
+                const id = (cluster as any).cycle_id ?? (cluster as any).cycleId ?? token;
+
+                const isWashRing =
+                  String(patternType).toLowerCase().includes('cycle') ||
+                  String(patternType).toLowerCase().includes('wash');
+
                 return (
-                  <Card key={cluster.cycle_id} className="hover:shadow-md transition-shadow">
+                  <Card
+                    key={id}
+                    className="hover:shadow-md transition-shadow border-slate-200"
+                  >
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div>
                           <CardTitle className="flex items-center space-x-2">
-                            <span>Cluster {cluster.cycle_id}</span>
+                            <span>Cluster {id}</span>
                             <Badge variant={getRiskBadgeVariant(riskLevel)}>
                               {getRiskDisplayName(riskLevel)}
                             </Badge>
+                            {isWashRing && (
+                              <Badge variant="outline" className="text-xs text-red-700">
+                                Suspected Wash-Trading Ring
+                              </Badge>
+                            )}
                           </CardTitle>
-                          <CardDescription>
-                            Pattern: {cluster.pattern_type} • Confidence: {cluster.confidence.toFixed(1)}%
+                          <CardDescription className="flex items-center gap-2 mt-1">
+                            <Activity className="h-3 w-3 text-slate-400" />
+                            <span>
+                              Pattern: {patternType.replace('_', ' ')} • Confidence:{' '}
+                              {typeof confidence === 'number'
+                                ? confidence.toFixed(1)
+                                : 'N/A'}
+                              %
+                            </span>
                           </CardDescription>
                         </div>
                         <Button variant="outline" size="sm">
@@ -250,47 +381,58 @@ export function WalletClustering() {
                     <CardContent>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                         <div>
-                          <p className="text-sm text-slate-500">Wallets</p>
-                          <p className="font-medium">{cluster.wallets.length}</p>
+                          <p className="text-sm text-slate-500">Wallets in Cluster</p>
+                          <p className="font-medium">{wallets.length}</p>
                         </div>
                         <div>
-                          <p className="text-sm text-slate-500">Total Volume</p>
-                          <p className="font-medium">{formatVolume(cluster.total_volume)}</p>
+                          <p className="text-sm text-slate-500">Total Cluster Volume</p>
+                          <p className="font-medium">
+                            {formatVolume((cluster as any).total_volume)}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-sm text-slate-500">Token</p>
-                          <p className="font-medium">{cluster.token}</p>
+                          <p className="text-sm text-slate-500">Primary Token</p>
+                          <p className="font-medium">{token}</p>
                         </div>
                         <div>
                           <p className="text-sm text-slate-500">Last Activity</p>
                           <p className="font-medium">
-                            {new Date(cluster.last_activity).toLocaleString()}
+                            {safeDateString((cluster as any).last_activity)}
                           </p>
                         </div>
                       </div>
 
                       <div className="space-y-3">
                         <div>
-                          <p className="text-sm text-slate-500 mb-2">Sample Wallet Addresses</p>
+                          <p className="text-sm text-slate-500 mb-2">
+                            Sample Wallet Addresses
+                          </p>
                           <div className="flex flex-wrap gap-2">
-                            {cluster.wallets.slice(0, 3).map((wallet, index) => (
-                              <Badge key={index} variant="outline" className="font-mono text-xs">
+                            {wallets.slice(0, 4).map((wallet, index) => (
+                              <Badge
+                                key={index}
+                                variant="outline"
+                                className="font-mono text-xs"
+                              >
                                 {wallet.slice(0, 6)}...{wallet.slice(-4)}
                               </Badge>
                             ))}
-                            {cluster.wallets.length > 3 && (
+                            {wallets.length > 4 && (
                               <Badge variant="outline" className="text-xs">
-                                +{cluster.wallets.length - 3} more
+                                +{wallets.length - 4} more
                               </Badge>
                             )}
                           </div>
                         </div>
 
                         <div>
-                          <p className="text-sm text-slate-500 mb-2">Detection Period</p>
+                          <p className="text-sm text-slate-500 mb-2">
+                            Detection Window & Pattern Notes
+                          </p>
                           <p className="text-sm text-slate-600">
-                            First detected: {new Date(cluster.first_detected).toLocaleDateString()} •{' '}
-                            Pattern type: {cluster.pattern_type.replace('_', ' ')}
+                            First detected:{' '}
+                            {safeDateOnly((cluster as any).first_detected)} • Pattern type:{' '}
+                            {patternType.replace('_', ' ')}
                           </p>
                         </div>
                       </div>
@@ -302,12 +444,13 @@ export function WalletClustering() {
               <Card>
                 <CardContent className="text-center py-12">
                   <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-slate-900 mb-2">No Clusters Found</h3>
+                  <h3 className="text-lg font-medium text-slate-900 mb-2">
+                    No Clusters Found
+                  </h3>
                   <p className="text-slate-600">
-                    {searchTerm || filterRisk !== 'all' 
-                      ? 'Try adjusting your search or filter criteria'
-                      : 'No suspicious wallet clusters detected at this time'
-                    }
+                    {searchTerm || filterRisk !== 'all'
+                      ? 'Try adjusting your search or risk filters.'
+                      : 'No suspicious wallet clusters detected in the current dataset.'}
                   </p>
                 </CardContent>
               </Card>
@@ -315,12 +458,13 @@ export function WalletClustering() {
           </div>
         </TabsContent>
 
+        {/* -------- Network tab (demo placeholder) -------- */}
         <TabsContent value="network" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Network Visualization</CardTitle>
               <CardDescription>
-                Interactive graph showing wallet connections and cluster relationships
+                Conceptual graph of wallet relationships and cluster-level wash-trading rings
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -329,15 +473,15 @@ export function WalletClustering() {
                   <Network className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-600 font-medium">Interactive Network Graph</p>
                   <p className="text-slate-500 text-sm mb-4">
-                    Visualization of wallet relationships and cluster formations
+                    In a production deployment, this panel would render a force-directed graph
+                    of wallet relationships, highlighting high-risk wash-trading clusters.
                   </p>
                   <Button variant="outline" onClick={loadClusterData}>
-                    Load Network Data
+                    Reload Cluster Data
                   </Button>
                 </div>
               </div>
-              
-              {/* Legend */}
+
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 rounded-full bg-red-500" />
@@ -356,18 +500,22 @@ export function WalletClustering() {
           </Card>
         </TabsContent>
 
+        {/* -------- Analysis tab -------- */}
         <TabsContent value="analysis" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle>Clustering Algorithms</CardTitle>
-                <CardDescription>Advanced methods for identifying wallet relationships</CardDescription>
+                <CardDescription>
+                  Methods used to identify wallet networks and suspicious entities
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="p-4 border border-slate-200 rounded-lg">
                   <h3 className="font-medium mb-2">Transaction Graph Analysis</h3>
                   <p className="text-sm text-slate-600 mb-2">
-                    Analyzes transaction flows and patterns to identify related wallets
+                    Builds a directed graph of wallet-to-wallet flows to detect closed loops
+                    and cyclical trading patterns associated with wash trades.
                   </p>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">Clusters detected:</span>
@@ -378,10 +526,11 @@ export function WalletClustering() {
                 <div className="p-4 border border-slate-200 rounded-lg">
                   <h3 className="font-medium mb-2">Behavioral Pattern Matching</h3>
                   <p className="text-sm text-slate-600 mb-2">
-                    Identifies similar trading patterns and timing behaviors
+                    Compares timing, direction, and size of trades to flag wallets exhibiting
+                    synchronized behavior across the network.
                   </p>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">High confidence:</span>
+                    <span className="text-slate-500">High confidence clusters:</span>
                     <span className="font-medium">{stats.highRiskClusters}</span>
                   </div>
                 </div>
@@ -389,11 +538,14 @@ export function WalletClustering() {
                 <div className="p-4 border border-slate-200 rounded-lg">
                   <h3 className="font-medium mb-2">Entity Resolution</h3>
                   <p className="text-sm text-slate-600 mb-2">
-                    Links wallets that likely belong to the same entity
+                    Groups wallets that likely belong to the same underlying actor, supporting
+                    SEC Rule 10b-5 style market manipulation investigations.
                   </p>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">Total wallets:</span>
-                    <span className="font-medium">{stats.monitoredWallets}</span>
+                    <span className="font-medium">
+                      {stats.monitoredWallets.toLocaleString()}
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -402,65 +554,73 @@ export function WalletClustering() {
             <Card>
               <CardHeader>
                 <CardTitle>Risk Assessment Metrics</CardTitle>
-                <CardDescription>Factors contributing to cluster risk scores</CardDescription>
+                <CardDescription>
+                  Factors used to compute cluster-level risk scores for compliance teams
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-slate-600">Transaction Frequency</span>
-                      <span className="text-sm font-medium">High Impact</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
-                      <div className="bg-red-500 h-2 rounded-full w-[85%]" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-slate-600">Volume Concentration</span>
-                      <span className="text-sm font-medium">Medium Impact</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
-                      <div className="bg-yellow-500 h-2 rounded-full w-[65%]" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-slate-600">Timing Coordination</span>
-                      <span className="text-sm font-medium">High Impact</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
-                      <div className="bg-red-500 h-2 rounded-full w-[78%]" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-slate-600">Cross-Token Activity</span>
-                      <span className="text-sm font-medium">Medium Impact</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
-                      <div className="bg-yellow-500 h-2 rounded-full w-[58%]" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-slate-600">Pattern Confidence</span>
-                      <span className="text-sm font-medium">Critical Impact</span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
-                      <div className="bg-red-600 h-2 rounded-full w-[92%]" />
-                    </div>
-                  </div>
+                  <MetricBar
+                    label="Transaction Frequency"
+                    impact="High Impact"
+                    percent={85}
+                    colorClass="bg-red-500"
+                  />
+                  <MetricBar
+                    label="Volume Concentration"
+                    impact="Medium Impact"
+                    percent={65}
+                    colorClass="bg-yellow-500"
+                  />
+                  <MetricBar
+                    label="Timing Coordination"
+                    impact="High Impact"
+                    percent={78}
+                    colorClass="bg-red-500"
+                  />
+                  <MetricBar
+                    label="Cross-Token Activity"
+                    impact="Medium Impact"
+                    percent={58}
+                    colorClass="bg-yellow-500"
+                  />
+                  <MetricBar
+                    label="Pattern Confidence"
+                    impact="Critical Impact"
+                    percent={92}
+                    colorClass="bg-red-600"
+                  />
                 </div>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// Small helper component for the metric bars
+type MetricBarProps = {
+  label: string;
+  impact: string;
+  percent: number;
+  colorClass: string;
+};
+
+function MetricBar({ label, impact, percent, colorClass }: MetricBarProps) {
+  return (
+    <div>
+      <div className="flex justify-between mb-1">
+        <span className="text-sm text-slate-600">{label}</span>
+        <span className="text-sm font-medium">{impact}</span>
+      </div>
+      <div className="w-full bg-slate-200 rounded-full h-2">
+        <div
+          className={`${colorClass} h-2 rounded-full`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
     </div>
   );
 }

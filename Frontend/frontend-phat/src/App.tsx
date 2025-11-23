@@ -1,18 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Shield, TrendingUp, Users, Eye, BarChart3, Activity, Clock } from 'lucide-react';
+import {
+  AlertTriangle,
+  Shield,
+  TrendingUp,
+  Users,
+  Eye,
+  BarChart3,
+  Activity,
+  Clock,
+} from 'lucide-react';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
+
 import LoginButton from './components/LoginButton';
 import { Alert, AlertDescription } from './components/ui/alert';
+
 import { Separator } from './components/ui/separator';
+
 import { DashboardOverview } from './components/DashboardOverview';
 import { TokenMonitoring } from './components/TokenMonitoring';
 import { AnomalyDetection } from './components/AnomalyDetection';
 import { WalletClustering } from './components/WalletClustering';
 import { ComplianceReports } from './components/ComplianceReports';
 import { AlertsPanel } from './components/AlertsPanel';
+
 import { apiClient, type SystemHealth, type Alert as ApiAlert } from './utils/api';
 import { firebaseAuth } from './utils/firebase/auth';
 import { User, onAuthStateChanged } from 'firebase/auth';
@@ -56,7 +70,7 @@ export default function App() {
   // Load initial data and setup real-time monitoring
   useEffect(() => {
     loadDashboardData();
-    
+
     // Poll for new alerts every 30 seconds
     const alertInterval = setInterval(() => {
       refreshAlerts();
@@ -76,25 +90,21 @@ export default function App() {
   const loadDashboardData = async () => {
     try {
       setIsLoading(true);
+
+      // Get health + core alerts/anomalies/cycles from backend
       const dashboardData = await apiClient.getDashboardData();
       setSystemHealth(dashboardData.health);
-      setLiveAlerts(dashboardData.alerts.slice(0, 5)); // Keep latest 5 alerts
+      setLiveAlerts(dashboardData.alerts.slice(0, 5)); // latest 5 alerts
     } catch (error) {
-      console.warn('API unavailable, using demo mode with mock data:', error);
-      // Set mock data directly when API fails
-      setSystemHealth({ 
-        status: 'healthy', 
-        timestamp: new Date().toISOString(), 
-        version: 'demo-mode' 
+      console.warn('API unavailable, falling back to demo header state:', error);
+
+      // Minimal fallback so UI still loads; your inner components handle no data gracefully
+      setSystemHealth({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        version: 'demo-mode',
       });
-      // The apiClient will return mock data, so we can still call it
-      try {
-        const mockData = await apiClient.getDashboardData();
-        setLiveAlerts(mockData.alerts.slice(0, 5));
-      } catch (mockError) {
-        console.warn('Mock data fallback failed, using empty state');
-        setLiveAlerts([]);
-      }
+      setLiveAlerts([]);
     } finally {
       setIsLoading(false);
     }
@@ -102,11 +112,12 @@ export default function App() {
 
   const refreshAlerts = async () => {
     try {
-      const { alerts } = await apiClient.detectSelfTrades();
-      setLiveAlerts(alerts.slice(0, 5)); // Keep latest 5 alerts
+      // If you have a dedicated /alerts endpoint:
+      const alerts = await apiClient.fetchAlerts();
+      setLiveAlerts(alerts.slice(0, 5));
     } catch (error) {
-      console.warn('Failed to refresh alerts, continuing with current data:', error);
-      // Don't update alerts if refresh fails, keep current state
+      console.warn('Failed to refresh alerts, keeping existing alerts:', error);
+      // Keep existing liveAlerts on error
     }
   };
 
@@ -115,11 +126,11 @@ export default function App() {
       const health = await apiClient.getHealth();
       setSystemHealth(health);
     } catch (error) {
-      console.warn('API health check failed, running in demo mode:', error);
-      setSystemHealth({ 
-        status: 'healthy', 
-        timestamp: new Date().toISOString(), 
-        version: 'demo-mode' 
+      console.warn('API health check failed, marking system as demo-mode:', error);
+      setSystemHealth({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        version: 'demo-mode',
       });
     }
   };
@@ -135,6 +146,8 @@ export default function App() {
       </div>
     );
   }
+
+  const isDemoMode = systemHealth?.version === 'demo-mode';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -152,21 +165,26 @@ export default function App() {
               </div>
               <Separator orientation="vertical" className="h-8" />
               <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  systemHealth?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'
-                }`} />
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    systemHealth?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                />
                 <span className="text-sm text-slate-600">
-                  {systemHealth?.version === 'demo-mode' ? 'Demo Mode' : 
-                   systemHealth?.status === 'healthy' ? 'System Healthy' : 'Issues Detected'}
+                  {isDemoMode
+                    ? 'Demo Mode'
+                    : systemHealth?.status === 'healthy'
+                    ? 'System Healthy'
+                    : 'Issues Detected'}
                 </span>
-                {systemHealth?.version === 'demo-mode' && (
+                {isDemoMode && (
                   <Badge variant="outline" className="text-xs">
                     Mock Data
                   </Badge>
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-900">
@@ -188,7 +206,7 @@ export default function App() {
                 size="sm"
                 onClick={loadDashboardData}
                 disabled={isLoading}
-              >
+
                 Refresh Data
               </Button>
             </div>
@@ -197,13 +215,13 @@ export default function App() {
       </header>
 
       {/* Demo Mode Banner */}
-      {systemHealth?.version === 'demo-mode' && (
+      {isDemoMode && (
         <div className="bg-blue-50 border-b border-blue-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
             <div className="flex items-center space-x-2">
               <Shield className="h-4 w-4 text-blue-600" />
               <span className="text-sm text-blue-800">
-                Demo Mode: Displaying mock data - FastAPI backend not connected
+                Demo Mode: Displaying mock or limited data – FastAPI backend not fully available
               </span>
               <Badge variant="outline" className="ml-2 text-blue-700 border-blue-300">
                 Mock Data Active
@@ -222,12 +240,16 @@ export default function App() {
               <span className="text-sm text-red-800">
                 Latest Alert: {liveAlerts[0]?.description}
               </span>
-              <Badge variant="destructive" className="ml-2">
-                {liveAlerts[0]?.severity?.toUpperCase()}
-              </Badge>
-              <Badge variant="outline" className="ml-2">
-                {liveAlerts[0]?.token}
-              </Badge>
+              {liveAlerts[0]?.severity && (
+                <Badge variant="destructive" className="ml-2">
+                  {liveAlerts[0].severity.toUpperCase()}
+                </Badge>
+              )}
+              {liveAlerts[0]?.token && (
+                <Badge variant="outline" className="ml-2">
+                  {liveAlerts[0].token}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -263,7 +285,7 @@ export default function App() {
                 <span>Alerts</span>
               </TabsTrigger>
             </TabsList>
-            
+
             <div className="flex items-center space-x-2 text-sm text-slate-500">
               <Clock className="h-4 w-4" />
               <span>Last updated: {new Date().toLocaleTimeString()}</span>
@@ -291,6 +313,7 @@ export default function App() {
           </TabsContent>
 
           <TabsContent value="alerts" className="space-y-6">
+            {/* AlertsPanel uses live alerts from backend; it falls back to mock inside if empty */}
             <AlertsPanel alerts={liveAlerts} />
           </TabsContent>
         </Tabs>

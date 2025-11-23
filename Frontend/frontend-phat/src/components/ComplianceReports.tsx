@@ -1,16 +1,53 @@
-import React, { useState } from 'react';
-import { FileText, Download, Calendar, Filter, Search, AlertTriangle, CheckCircle, Clock, Eye } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  FileText,
+  Download,
+  Search,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Eye,
+} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from './ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './ui/table';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 
-const complianceReports = [
+import {
+  apiClient,
+  type ComplianceReport as ApiComplianceReport,
+  type ReportTemplate as ApiReportTemplate,
+  type ReportAuditEntry as ApiReportAuditEntry,
+} from '../utils/api';
+
+/* -------------------------------------------------------------------------- */
+/*                               MOCK / DEMO DATA                             */
+/* -------------------------------------------------------------------------- */
+
+const mockComplianceReports: ApiComplianceReport[] = [
   {
     id: 'RPT_2024_001',
     title: 'Q1 2024 Wash Trading Analysis',
@@ -22,7 +59,7 @@ const complianceReports = [
     tokensAnalyzed: 2847,
     violationsFound: 89,
     riskLevel: 'medium',
-    downloadUrl: '#'
+    downloadUrl: '#',
   },
   {
     id: 'RPT_2024_002',
@@ -35,7 +72,7 @@ const complianceReports = [
     tokensAnalyzed: 1,
     violationsFound: 47,
     riskLevel: 'high',
-    downloadUrl: '#'
+    downloadUrl: '#',
   },
   {
     id: 'RPT_2024_003',
@@ -48,7 +85,7 @@ const complianceReports = [
     tokensAnalyzed: 156,
     violationsFound: 23,
     riskLevel: 'medium',
-    downloadUrl: null
+    downloadUrl: null,
   },
   {
     id: 'RPT_2024_004',
@@ -61,103 +98,167 @@ const complianceReports = [
     tokensAnalyzed: 0,
     violationsFound: 0,
     riskLevel: 'unknown',
-    downloadUrl: null
-  }
+    downloadUrl: null,
+  },
 ];
 
-const reportTemplates = [
+const mockReportTemplates: ApiReportTemplate[] = [
   {
     id: 'TMPL_001',
     name: 'SEC 10b-5 Compliance Report',
-    description: 'Standard report for SEC Rule 10b-5 violations including wash trading and market manipulation',
+    description:
+      'Standard report for SEC Rule 10b-5 violations including wash trading and market manipulation',
     sections: ['Executive Summary', 'Methodology', 'Findings', 'Risk Assessment', 'Recommendations'],
-    estimatedTime: '15-20 minutes'
+    estimatedTime: '15-20 minutes',
   },
   {
     id: 'TMPL_002',
     name: 'Token-Specific Analysis',
-    description: 'Detailed analysis of a specific digital asset including trading patterns and anomalies',
+    description:
+      'Detailed analysis of a specific digital asset including trading patterns and anomalies',
     sections: ['Token Overview', 'Trading Analysis', 'Anomaly Detection', 'Compliance Assessment'],
-    estimatedTime: '10-15 minutes'
+    estimatedTime: '10-15 minutes',
   },
   {
     id: 'TMPL_003',
     name: 'Wallet Cluster Investigation',
-    description: 'Comprehensive report on wallet relationships and suspicious network activity',
+    description:
+      'Comprehensive report on wallet relationships and suspicious network activity',
     sections: ['Network Analysis', 'Entity Resolution', 'Risk Scoring', 'Violation Summary'],
-    estimatedTime: '20-30 minutes'
-  }
+    estimatedTime: '20-30 minutes',
+  },
 ];
 
-const auditTrail = [
+const mockAuditTrail: ApiReportAuditEntry[] = [
   {
     timestamp: '2024-01-31 09:23:15',
     user: 'System',
     action: 'Report Generated',
     details: 'Q1 2024 Wash Trading Analysis completed',
-    reportId: 'RPT_2024_001'
+    reportId: 'RPT_2024_001',
   },
   {
     timestamp: '2024-01-30 14:45:22',
     user: 'John Analyst',
     action: 'Report Downloaded',
     details: 'SHIB Token Compliance Review downloaded',
-    reportId: 'RPT_2024_002'
+    reportId: 'RPT_2024_002',
   },
   {
     timestamp: '2024-01-30 11:12:08',
     user: 'Sarah Compliance',
     action: 'Report Initiated',
     details: 'Cross-Exchange Activity Report generation started',
-    reportId: 'RPT_2024_003'
+    reportId: 'RPT_2024_003',
   },
   {
     timestamp: '2024-01-29 16:30:45',
     user: 'Admin',
     action: 'Template Modified',
     details: 'SEC 10b-5 Compliance Report template updated',
-    reportId: null
-  }
+    reportId: null,
+  },
 ];
+
+/* -------------------------------------------------------------------------- */
+/*                               MAIN COMPONENT                               */
+/* -------------------------------------------------------------------------- */
 
 export function ComplianceReports() {
   const [selectedType, setSelectedType] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [showGenerateForm, setShowGenerateForm] = useState(false);
+  const [tabValue, setTabValue] = useState<'reports' | 'templates' | 'audit' | 'generate'>('reports');
 
-  const filteredReports = complianceReports.filter(report => {
+  const [reports, setReports] = useState<ApiComplianceReport[]>([]);
+  const [templates, setTemplates] = useState<ApiReportTemplate[]>([]);
+  const [audit, setAudit] = useState<ApiReportAuditEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Load from backend, fall back to mock data if needed
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const [reportsRes, templatesRes, auditRes] = await Promise.all([
+          apiClient.getComplianceReports().catch(() => [] as ApiComplianceReport[]),
+          apiClient.getReportTemplates().catch(() => [] as ApiReportTemplate[]),
+          apiClient.getReportAuditTrail().catch(() => [] as ApiReportAuditEntry[]),
+        ]);
+
+        setReports(reportsRes.length > 0 ? reportsRes : mockComplianceReports);
+        setTemplates(templatesRes.length > 0 ? templatesRes : mockReportTemplates);
+        setAudit(auditRes.length > 0 ? auditRes : mockAuditTrail);
+
+        if (
+          reportsRes.length === 0 &&
+          templatesRes.length === 0 &&
+          auditRes.length === 0
+        ) {
+          setLoadError('Backend not reachable, running in demo mode with mock data.');
+        }
+      } catch (err) {
+        console.error('Failed to load compliance data:', err);
+        setReports(mockComplianceReports);
+        setTemplates(mockReportTemplates);
+        setAudit(mockAuditTrail);
+        setLoadError('Backend error – showing demo data.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  const filteredReports = reports.filter((report) => {
     const matchesType = selectedType === 'all' || report.type === selectedType;
     const matchesStatus = selectedStatus === 'all' || report.status === selectedStatus;
-    const matchesSearch = report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         report.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      report.title.toLowerCase().includes(term) || report.id.toLowerCase().includes(term);
     return matchesType && matchesStatus && matchesSearch;
   });
 
-  const getStatusBadgeVariant = (status: string) => {
+  const getStatusBadgeVariant = (status: ApiComplianceReport['status']) => {
     switch (status) {
-      case 'completed': return 'default';
-      case 'in_progress': return 'secondary';
-      case 'pending': return 'outline';
-      default: return 'outline';
+      case 'completed':
+        return 'default';
+      case 'in_progress':
+        return 'secondary';
+      case 'pending':
+        return 'outline';
+      default:
+        return 'outline';
     }
   };
 
-  const getRiskBadgeVariant = (riskLevel: string) => {
+  const getRiskBadgeVariant = (riskLevel: ApiComplianceReport['riskLevel']) => {
     switch (riskLevel) {
-      case 'high': return 'destructive';
-      case 'medium': return 'secondary';
-      case 'low': return 'outline';
-      default: return 'outline';
+      case 'high':
+        return 'destructive';
+      case 'medium':
+        return 'secondary';
+      case 'low':
+        return 'outline';
+      default:
+        return 'outline';
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: ApiComplianceReport['status']) => {
     switch (status) {
-      case 'completed': return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'in_progress': return <Clock className="h-4 w-4 text-blue-500" />;
-      case 'pending': return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
-      default: return <Clock className="h-4 w-4 text-slate-400" />;
+      case 'completed':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'in_progress':
+        return <Clock className="h-4 w-4 text-blue-500" />;
+      case 'pending':
+        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+      default:
+        return <Clock className="h-4 w-4 text-slate-400" />;
     }
   };
 
@@ -167,9 +268,16 @@ export function ComplianceReports() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Compliance Reports</h2>
-          <p className="text-slate-600">Generate and manage regulatory compliance documentation</p>
+          <p className="text-slate-600">
+            Generate and manage regulatory compliance documentation
+          </p>
+          {loadError && (
+            <p className="mt-1 text-xs text-slate-500">
+              {loadError}
+            </p>
+          )}
         </div>
-        <Button onClick={() => setShowGenerateForm(true)}>
+        <Button onClick={() => setTabValue('generate')}>
           <FileText className="h-4 w-4 mr-2" />
           Generate Report
         </Button>
@@ -183,7 +291,7 @@ export function ComplianceReports() {
             <FileText className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
+            <div className="text-2xl font-bold">{reports.length || 24}</div>
             <p className="text-xs text-slate-500">+3 this month</p>
           </CardContent>
         </Card>
@@ -194,7 +302,9 @@ export function ComplianceReports() {
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">159</div>
+            <div className="text-2xl font-bold text-red-600">
+              {reports.reduce((sum, r) => sum + (r.violationsFound || 0), 0) || 159}
+            </div>
             <p className="text-xs text-slate-500">Across all reports</p>
           </CardContent>
         </Card>
@@ -205,7 +315,9 @@ export function ComplianceReports() {
             <Clock className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">3</div>
+            <div className="text-2xl font-bold text-yellow-600">
+              {reports.filter((r) => r.status === 'pending').length || 3}
+            </div>
             <p className="text-xs text-slate-500">Require attention</p>
           </CardContent>
         </Card>
@@ -222,7 +334,11 @@ export function ComplianceReports() {
         </Card>
       </div>
 
-      <Tabs defaultValue="reports" className="space-y-6">
+      <Tabs
+        value={tabValue}
+        onValueChange={(val) => setTabValue(val as typeof tabValue)}
+        className="space-y-6"
+      >
         <TabsList>
           <TabsTrigger value="reports">Report Library</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
@@ -230,6 +346,7 @@ export function ComplianceReports() {
           <TabsTrigger value="generate">Generate New</TabsTrigger>
         </TabsList>
 
+        {/* REPORTS TAB */}
         <TabsContent value="reports" className="space-y-6">
           {/* Filters */}
           <Card>
@@ -277,89 +394,111 @@ export function ComplianceReports() {
           <Card>
             <CardHeader>
               <CardTitle>Reports ({filteredReports.length})</CardTitle>
-              <CardDescription>Compliance reports and analysis documentation</CardDescription>
+              <CardDescription>
+                Compliance reports and analysis documentation
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Report</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead>Violations</TableHead>
-                      <TableHead>Risk Level</TableHead>
-                      <TableHead>Generated By</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredReports.map((report) => (
-                      <TableRow key={report.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium text-slate-900">{report.title}</p>
-                            <p className="text-sm text-slate-500">{report.id}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {report.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            {getStatusIcon(report.status)}
-                            <Badge variant={getStatusBadgeVariant(report.status)}>
-                              {report.status.replace('_', ' ')}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell>{report.period}</TableCell>
-                        <TableCell>
-                          {report.violationsFound > 0 ? (
-                            <span className="text-red-600 font-medium">{report.violationsFound}</span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getRiskBadgeVariant(report.riskLevel)}>
-                            {report.riskLevel}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-slate-600">{report.generatedBy}</TableCell>
-                        <TableCell>
-                          <div className="flex space-x-2">
-                            <Button variant="outline" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            {report.downloadUrl && (
-                              <Button variant="outline" size="sm">
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
+              {isLoading ? (
+                <div className="py-8 text-center text-slate-500 text-sm">
+                  Loading reports…
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Report</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Violations</TableHead>
+                        <TableHead>Risk Level</TableHead>
+                        <TableHead>Generated By</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredReports.map((report) => (
+                        <TableRow key={report.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium text-slate-900">{report.title}</p>
+                              <p className="text-sm text-slate-500">{report.id}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {report.type
+                                .replace('_', ' ')
+                                .replace(/\b\w/g, (l) => l.toUpperCase())}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              {getStatusIcon(report.status)}
+                              <Badge variant={getStatusBadgeVariant(report.status)}>
+                                {report.status.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>{report.period}</TableCell>
+                          <TableCell>
+                            {report.violationsFound > 0 ? (
+                              <span className="text-red-600 font-medium">
+                                {report.violationsFound}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getRiskBadgeVariant(report.riskLevel)}>
+                              {report.riskLevel}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            {report.generatedBy}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              <Button variant="outline" size="sm">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              {report.downloadUrl && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <a href={report.downloadUrl}>
+                                    <Download className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* TEMPLATES TAB */}
         <TabsContent value="templates" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Report Templates</CardTitle>
-              <CardDescription>Pre-configured templates for different types of compliance reports</CardDescription>
+              <CardDescription>
+                Pre-configured templates for different types of compliance reports
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {reportTemplates.map((template) => (
-                <div key={template.id} className="p-4 border border-slate-200 rounded-lg">
+              {templates.map((template) => (
+                <div
+                  key={template.id}
+                  className="p-4 border border-slate-200 rounded-lg"
+                >
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <h3 className="font-medium text-slate-900">{template.name}</h3>
@@ -381,7 +520,9 @@ export function ComplianceReports() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-sm text-slate-500">Estimated Generation Time</p>
+                      <p className="text-sm text-slate-500">
+                        Estimated Generation Time
+                      </p>
                       <p className="font-medium">{template.estimatedTime}</p>
                     </div>
                   </div>
@@ -391,20 +532,28 @@ export function ComplianceReports() {
           </Card>
         </TabsContent>
 
+        {/* AUDIT TAB */}
         <TabsContent value="audit" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Audit Trail</CardTitle>
-              <CardDescription>Complete history of report generation and access activities</CardDescription>
+              <CardDescription>
+                Complete history of report generation and access activities
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {auditTrail.map((entry, index) => (
-                  <div key={index} className="flex items-start space-x-4 p-3 bg-slate-50 rounded-lg">
+                {audit.map((entry, index) => (
+                  <div
+                    key={`${entry.timestamp}-${index}`}
+                    className="flex items-start space-x-4 p-3 bg-slate-50 rounded-lg"
+                  >
                     <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium text-slate-900">{entry.action}</span>
+                        <span className="font-medium text-slate-900">
+                          {entry.action}
+                        </span>
                         <span className="text-slate-500">by {entry.user}</span>
                         {entry.reportId && (
                           <Badge variant="outline" className="text-xs">
@@ -422,11 +571,14 @@ export function ComplianceReports() {
           </Card>
         </TabsContent>
 
+        {/* GENERATE TAB */}
         <TabsContent value="generate" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Generate New Report</CardTitle>
-              <CardDescription>Create a custom compliance report based on your requirements</CardDescription>
+              <CardDescription>
+                Create a custom compliance report based on your requirements
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -443,15 +595,21 @@ export function ComplianceReports() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="quarterly">Quarterly Analysis</SelectItem>
-                        <SelectItem value="token_specific">Token-Specific Review</SelectItem>
-                        <SelectItem value="exchange_analysis">Exchange Analysis</SelectItem>
-                        <SelectItem value="wallet_analysis">Wallet Investigation</SelectItem>
+                        <SelectItem value="token_specific">
+                          Token-Specific Review
+                        </SelectItem>
+                        <SelectItem value="exchange_analysis">
+                          Exchange Analysis
+                        </SelectItem>
+                        <SelectItem value="wallet_analysis">
+                          Wallet Investigation
+                        </SelectItem>
                         <SelectItem value="custom">Custom Report</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="date-range">Date Range</Label>
+                    <Label>Date Range</Label>
                     <div className="grid grid-cols-2 gap-2">
                       <Input type="date" placeholder="Start date" />
                       <Input type="date" placeholder="End date" />
@@ -461,15 +619,25 @@ export function ComplianceReports() {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="tokens">Tokens to Analyze (Optional)</Label>
-                    <Input id="tokens" placeholder="BTC, ETH, SHIB (leave empty for all)" />
+                    <Input
+                      id="tokens"
+                      placeholder="BTC, ETH, SHIB (leave empty for all)"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="exchanges">Exchanges (Optional)</Label>
-                    <Input id="exchanges" placeholder="Binance, Coinbase, Uniswap" />
+                    <Input
+                      id="exchanges"
+                      placeholder="Binance, Coinbase, Uniswap"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="notes">Additional Notes</Label>
-                    <Textarea id="notes" placeholder="Special requirements or focus areas..." rows={3} />
+                    <Textarea
+                      id="notes"
+                      placeholder="Special requirements or focus areas..."
+                      rows={3}
+                    />
                   </div>
                 </div>
               </div>

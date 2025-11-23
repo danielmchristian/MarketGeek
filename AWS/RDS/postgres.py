@@ -1,13 +1,14 @@
 import os
+from dotenv import load_dotenv
 import psycopg2
 from psycopg2 import OperationalError
 
-
+load_dotenv() 
 # -------- Configuration (env-first, with sensible defaults) --------
 DB_HOST = os.getenv("PGHOST", "marketgeek.cungswmsam1g.us-east-1.rds.amazonaws.com")
 DB_NAME = os.getenv("PGDATABASE", "postgres")      # default RDS maintenance DB
 DB_USER = os.getenv("PGUSER", "postgres")
-DB_PASSWORD = os.getenv("PGPASSWORD", "")
+DB_PASSWORD = os.getenv("PGPASSWORD")
 DB_PORT = int(os.getenv("PGPORT", "5432"))
 
 # SSL settings

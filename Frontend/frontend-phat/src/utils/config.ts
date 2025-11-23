@@ -1,3 +1,4 @@
+// src/utils/config.ts
 // Configuration for WashGuard Pro API client
 // Following UNC Charlotte ITSC 4155 guidelines for environment management
 
@@ -10,25 +11,26 @@ export interface AppConfig {
 
 // Detect environment and set API URL accordingly
 const getApiBaseUrl = (): string => {
-  // Check if we're in a browser environment
+  // SSR / Node fallback
   if (typeof window === 'undefined') {
-    return 'http://localhost:8000'; // Server-side fallback
+    return 'http://localhost:8000';
   }
 
   const hostname = window.location.hostname;
-  
-  // Development environment detection
-  const isDev = hostname === 'localhost' || 
-               hostname === '127.0.0.1' ||
-               hostname.includes('localhost') ||
-               hostname.includes('127.0.0.1');
+
+  const isDev =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.includes('localhost') ||
+    hostname.includes('127.0.0.1');
 
   if (isDev) {
-    return 'http://localhost:8000'; // Local FastAPI backend
+    // Local FastAPI backend
+    return 'http://localhost:8000';
   }
 
   // Production environment
-  // Replace with your actual production API URL when deploying
+  // TODO: replace with your real deployed backend URL
   return 'https://api.washguard.pro';
 };
 
@@ -38,13 +40,14 @@ const getEnvironmentInfo = () => {
   }
 
   const hostname = window.location.hostname;
-  const isDevelopment = hostname === 'localhost' || 
-                       hostname === '127.0.0.1' ||
-                       hostname.includes('localhost');
-  
+  const isDevelopment =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.includes('localhost');
+
   return {
     isDevelopment,
-    isProduction: !isDevelopment
+    isProduction: !isDevelopment,
   };
 };
 
@@ -54,24 +57,24 @@ export const config: AppConfig = {
   apiBaseUrl: getApiBaseUrl(),
   isDevelopment: envInfo.isDevelopment,
   isProduction: envInfo.isProduction,
-  enableMockData: true, // Always enable mock data as fallback
+  // This just controls how we *handle* failures, not the UI mock arrays
+  enableMockData: true,
 };
 
-// Simple function to test if API is reachable
 export const testApiConnection = async (): Promise<boolean> => {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-    
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds
+
     const response = await fetch(`${config.apiBaseUrl}/health`, {
       signal: controller.signal,
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
-    
+
     clearTimeout(timeoutId);
     return response.ok;
-  } catch (error) {
+  } catch {
     return false;
   }
 };
