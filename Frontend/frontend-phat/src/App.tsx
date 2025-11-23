@@ -206,7 +206,7 @@ export default function App() {
                 size="sm"
                 onClick={loadDashboardData}
                 disabled={isLoading}
-
+              >
                 Refresh Data
               </Button>
             </div>
