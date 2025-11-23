@@ -1,160 +1,236 @@
-# Backend/fastapi_app/detection.py
-from datetime import timedelta
-from typing import List, Dict, Tuple
+# backend/fastapi_app/detection.py
+
+from __future__ import annotations
+
 from collections import defaultdict
-from statistics import mean, pstdev
-import uuid
+from datetime import datetime, timezone
+from statistics import mean, stdev
+from typing import List, Dict, Tuple
 
-from .schemas import TradeIn, Alert
+from .schemas import Alert          # Pydantic model for API
+from .models import Trade           # internal trade object
+from .utils import _id              # id generator
 
-def _id() -> str:
-    return str(uuid.uuid4())
 
-# 1) SELF-TRADES: same economic owner both sides
-def detect_self_trades(trades: List[TradeIn]) -> List[Alert]:
+# ----------------------------
+# Helper: ensure tz-aware UTC
+# ----------------------------
+def _to_utc(dt: datetime) -> datetime:
+    """Return a timezone-aware UTC datetime."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+# -------------------------------------------------
+# 1) Self-trade / wash-trade style “same wallet” alerts
+# -------------------------------------------------
+def detect_self_trades(trades: List[Trade]) -> List[Alert]:
     alerts: List[Alert] = []
+
     for t in trades:
-        if t.from_address == t.to_address:
-            alerts.append(Alert(
-                alert_id=_id(),
+        if not t.from_address or not t.to_address:
+            continue
+
+        if t.from_address.lower() != t.to_address.lower():
+            continue
+
+        ts = _to_utc(t.timestamp)
+
+        alerts.append(
+            Alert(
+                alert_id=_id(),  
                 type="self_trade",
                 severity="high",
-                confidence=95.0,
+                confidence=0.9,
                 token=t.token,
-                description=f"Self-trade: wallet {t.from_address} is both buyer and seller on {t.token}.",
-                timestamp=t.timestamp,
-                affected_addresses=[t.from_address],
-                volume=f"{t.amount:.8f} {t.token}",
+                description=(
+                    f"Self-trade detected for {t.token} on {t.exchange} "
+                    f"between {t.from_address} and {t.to_address}."
+                ),
+                timestamp=ts.isoformat(),
+                affected_addresses=[t.from_address, t.to_address],
+                volume=float(t.amount) * float(t.price),
                 exchanges=[t.exchange],
-            ))
+            )
+        )
+
     return alerts
 
-# 2) WASH TRADES: sell at loss then rebuy within 30 days (simplified)
-def detect_wash_trading(trades: List[TradeIn]) -> List[Alert]:
-    alerts: List[Alert] = []
-    grouped: Dict[Tuple[str, str], List[TradeIn]] = defaultdict(list)
+
+
+# -------------------------------------------------
+# 2) Volume spike / anomaly detection
+#    (returns plain dicts, not Pydantic models)
+# -------------------------------------------------
+def detect_volume_spikes(trades: List[Trade]) -> List[dict]:
+    """
+    Group trades into 5-minute buckets per token and flag high volume buckets.
+    Returns a list[dict] with keys:
+      token, timestamp, z_score, normal_volume, actual_volume, threshold, severity
+    """
+    if not trades:
+        return []
+
+    # bucket: (token, bucket_start_iso) -> total volume
+    buckets: Dict[Tuple[str, str], float] = defaultdict(float)
 
     for t in trades:
-        grouped[(t.from_address, t.token)].append(t)
+        ts = _to_utc(t.timestamp)
+        # 5-minute bucket
+        bucket_minute = (ts.minute // 5) * 5
+        bucket = ts.replace(minute=bucket_minute, second=0, microsecond=0)
+        bucket_ts = bucket.isoformat()
+        bucket_key = (t.token, bucket_ts)
 
-    for (wallet, token), wallet_trades in grouped.items():
-        wallet_trades.sort(key=lambda x: x.timestamp)
+        notional = float(t.amount) * float(t.price)
+        buckets[bucket_key] += notional
 
-        for i, sell in enumerate(wallet_trades):
-            # we assume from_address is "seller"; amount is quantity sold
-            for buy in wallet_trades[i+1:]:
-                if buy.timestamp - sell.timestamp > timedelta(days=30):
-                    break
-                # treat buy as repurchase if direction flips (simple heuristic)
-                if buy.price >= sell.price:
-                    # realized economic loss (approx)
-                    loss_per_unit = buy.price - sell.price
-                    realized_loss = abs(loss_per_unit * min(buy.amount, sell.amount))
-                    if realized_loss < 100:  # materiality threshold
-                        continue
+    anomalies: List[dict] = []
 
-                    alerts.append(Alert(
-                        alert_id=_id(),
-                        type="wash_trading",
-                        severity="medium",
-                        confidence=80.0,
-                        token=token,
-                        description=(
-                            f"Potential wash trade: wallet {wallet} sold {token} at a lower price "
-                            f"and repurchased within 30 days (approx loss ≈ ${realized_loss:.2f})."
-                        ),
-                        timestamp=buy.timestamp,
-                        affected_addresses=[wallet],
-                        volume=f"{min(buy.amount, sell.amount):.8f} {token}",
-                        exchanges=[sell.exchange, buy.exchange],
-                    ))
-                    break
-    return alerts
+    # group by token to compute per-token stats
+    per_token: Dict[str, List[float]] = defaultdict(list)
+    for (token, _bucket_ts), vol in buckets.items():
+        per_token[token].append(vol)
 
-# 3) VOLUME SPIKES: abnormal volume relative to history
-def detect_volume_spikes(trades: List[TradeIn]) -> List[Alert]:
-    alerts: List[Alert] = []
-    if len(trades) < 5:
-        return alerts
-
-    token_groups: Dict[str, List[TradeIn]] = defaultdict(list)
-    for t in trades:
-        token_groups[t.token].append(t)
-
-    for token, ts in token_groups.items():
-        amounts = [t.amount for t in ts]
-        if len(amounts) < 5:
+    for (token, bucket_ts), vol in buckets.items():
+        vols = per_token[token]
+        if len(vols) < 2:
+            # Not enough history to meaningfully compute anomaly
             continue
-        avg = mean(amounts)
-        std = pstdev(amounts)
-        threshold = avg + 1.5 * std if std > 0 else avg * 2
 
-        for t in ts:
-            if t.amount > threshold:
-                alerts.append(Alert(
-                    alert_id=_id(),
-                    type="volume_spike",
-                    severity="medium",
-                    confidence=75.0,
-                    token=token,
-                    description=(
-                        f"Abnormal volume spike: {t.amount:.8f} {token} on {t.exchange}, "
-                        f"above threshold {threshold:.8f}."
-                    ),
-                    timestamp=t.timestamp,
-                    affected_addresses=[t.from_address, t.to_address],
-                    volume=f"{t.amount:.8f} {token}",
-                    exchanges=[t.exchange],
-                ))
-    return alerts
+        mu = mean(vols)
+        sigma = stdev(vols) or 1e-9  # avoid div by zero
+        z = (vol - mu) / sigma
+        threshold = 3.0  # 3-sigma rule
 
-# 4) SIMPLE CIRCULAR TRADING (short cycles A→B→C→A)
-def detect_cycles(trades: List[TradeIn]) -> List[Alert]:
-    alerts: List[Alert] = []
-    # Build adjacency list by token within a recent window (e.g. last 1 day)
-    token_edges: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
+        if z < threshold:
+            continue
 
+        severity = "high" if z >= 6 else "medium"
+
+        anomalies.append(
+            {
+                "token": token,
+                "timestamp": bucket_ts,
+                "z_score": z,
+                "normal_volume": mu,
+                "actual_volume": vol,
+                "threshold": threshold,
+                "severity": severity,
+            }
+        )
+
+    return anomalies
+
+
+# -------------------------------------------------
+# 3) Simple cycle / circular pattern detection
+#    (also returns plain dicts)
+# -------------------------------------------------
+def detect_cycles(trades: List[Trade], min_cycle_length: int = 3) -> List[dict]:
+    """
+    VERY simple cycle detection:
+    - Looks for chains from A→B→C→...→A for the same token.
+    - Returns a list[dict] with keys:
+        cycle_id, wallets, token, total_volume, confidence,
+        pattern_type, first_detected, last_activity
+    """
+    cycles: List[dict] = []
+
+    # group trades by token
+    trades_by_token: Dict[str, List[Trade]] = defaultdict(list)
     for t in trades:
-        token_edges[t.token][t.from_address].append(t.to_address)
+        trades_by_token[t.token].append(t)
 
-    # Only detect simple 2- or 3-node cycles
-    for token, graph in token_edges.items():
-        for a in graph:
-            for b in graph[a]:
-                if b in graph and a in graph[b]:  # 2-cycle A<->B
-                    alerts.append(Alert(
-                        alert_id=_id(),
-                        type="price_manipulation",
-                        severity="medium",
-                        confidence=70.0,
-                        token=token,
-                        description=f"Potential circular trading between {a} and {b} on {token}.",
-                        timestamp=trades[-1].timestamp if trades else None,
-                        affected_addresses=[a, b],
-                        volume="N/A",
-                        exchanges=list({t.exchange for t in trades if t.token == token}),
-                    ))
-                # 3-cycle A->B->C->A
-                for c in graph.get(b, []):
-                    if c in graph and a in graph[c] and len({a, b, c}) == 3:
-                        alerts.append(Alert(
-                            alert_id=_id(),
-                            type="price_manipulation",
-                            severity="high",
-                            confidence=80.0,
-                            token=token,
-                            description=f"Potential 3-way circular trading between {a}, {b}, and {c} on {token}.",
-                            timestamp=trades[-1].timestamp if trades else None,
-                            affected_addresses=[a, b, c],
-                            volume="N/A",
-                            exchanges=list({t.exchange for t in trades if t.token == token}),
-                        ))
-    return alerts
+    for token, token_trades in trades_by_token.items():
+        # Build adjacency: wallet -> set(neighbors)
+        graph: Dict[str, set[str]] = defaultdict(set)
+        for t in token_trades:
+            if not t.from_address or not t.to_address:
+                continue
+            graph[t.from_address].add(t.to_address)
 
-def detect_all(trades: List[TradeIn]) -> List[Alert]:
+        visited_paths: set[Tuple[str, ...]] = set()
+
+        def dfs(start: str, current: str, path: List[str]):
+            if len(path) > min_cycle_length + 1:
+                return
+            for nxt in graph.get(current, []):
+                if nxt == start and len(path) >= min_cycle_length:
+                    cycle_tuple = tuple(path)
+                    if cycle_tuple in visited_paths:
+                        continue
+                    visited_paths.add(cycle_tuple)
+
+                    # Collect basic stats
+                    related_trades = [
+                        t for t in token_trades
+                        if t.from_address in path and t.to_address in path
+                    ]
+                    total_vol = sum(
+                        float(t.amount) * float(t.price) for t in related_trades
+                    )
+                    times = [_to_utc(t.timestamp) for t in related_trades]
+                    if times:
+                        first_ts = min(times).isoformat()
+                        last_ts = max(times).isoformat()
+                    else:
+                        first_ts = last_ts = datetime.now(timezone.utc).isoformat()
+
+                    cycles.append(
+                        {
+                            "cycle_id": _id(),
+                            "wallets": path,
+                            "token": token,
+                            "total_volume": total_vol,
+                            "confidence": 0.7,
+                            "pattern_type": "simple_cycle",
+                            "first_detected": first_ts,
+                            "last_activity": last_ts,
+                        }
+                    )
+                elif nxt not in path:
+                    dfs(start, nxt, path + [nxt])
+
+        for start_wallet in list(graph.keys()):
+            dfs(start_wallet, start_wallet, [start_wallet])
+
+    return cycles
+
+
+# -------------------------------------------------
+# 4) Helper: run all detectors on a trade list
+# -------------------------------------------------
+def detect_all(trades: List[Trade]) -> List[Alert]:
+    """
+    Convenience function used by /detect/all-patterns.
+    Combines self-trade alerts and volume spike alerts.
+    """
     alerts: List[Alert] = []
+
+    # Self-trade alerts
     alerts.extend(detect_self_trades(trades))
-    alerts.extend(detect_wash_trading(trades))
-    alerts.extend(detect_volume_spikes(trades))
-    alerts.extend(detect_cycles(trades))
+
+    # Volume anomalies → convert to generic "volume_spike" Alert
+    anomalies = detect_volume_spikes(trades)
+    for a in anomalies:
+        alerts.append(
+            Alert(
+                alert_id=_id(),
+                type="volume_spike",
+                severity=a["severity"],
+                confidence=0.8,
+                token=a["token"],
+                description=(
+                    f"Volume spike detected (z={a['z_score']:.2f}) for {a['token']} "
+                    f"at {a['timestamp']}."
+                ),
+                timestamp=a["timestamp"],
+                affected_addresses=[],
+                volume=a["actual_volume"],
+                exchanges=[],
+            )
+        )
+
     return alerts

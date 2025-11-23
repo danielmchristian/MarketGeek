@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Bell, CheckCircle, X, Filter, Search, Clock, TrendingUp, Users, Activity } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bell,
+  CheckCircle,
+  Filter,
+  Search,
+  Clock,
+  TrendingUp,
+  Users,
+  Activity,
+} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -7,15 +17,18 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
+import { type Alert as ApiAlert } from '../utils/api';
+
 const alertTypes = {
   wash_trading: { icon: Activity, color: 'text-red-500', bgColor: 'bg-red-50' },
   volume_spike: { icon: TrendingUp, color: 'text-orange-500', bgColor: 'bg-orange-50' },
   circular_trading: { icon: Activity, color: 'text-red-500', bgColor: 'bg-red-50' },
   price_manipulation: { icon: TrendingUp, color: 'text-purple-500', bgColor: 'bg-purple-50' },
   cluster_activity: { icon: Users, color: 'text-blue-500', bgColor: 'bg-blue-50' },
-  cross_exchange: { icon: Activity, color: 'text-green-500', bgColor: 'bg-green-50' }
+  cross_exchange: { icon: Activity, color: 'text-green-500', bgColor: 'bg-green-50' },
 };
 
+// Fallback demo alerts if there is no live data
 const mockAlerts = [
   {
     id: 'ALT_001',
@@ -30,7 +43,7 @@ const mockAlerts = [
     volume: '$45,230',
     exchanges: ['Uniswap', 'SushiSwap'],
     affectedWallets: 4,
-    investigationNotes: ''
+    investigationNotes: '',
   },
   {
     id: 'ALT_002',
@@ -45,7 +58,7 @@ const mockAlerts = [
     volume: '$89,450',
     exchanges: ['Binance', 'KuCoin'],
     affectedWallets: 12,
-    investigationNotes: 'Analyst reviewing transaction patterns'
+    investigationNotes: 'Analyst reviewing transaction patterns',
   },
   {
     id: 'ALT_003',
@@ -60,7 +73,7 @@ const mockAlerts = [
     volume: '$127,890',
     exchanges: ['Coinbase', 'Binance', 'Kraken'],
     affectedWallets: 8,
-    investigationNotes: 'Confirmed manipulation scheme. Report generated.'
+    investigationNotes: 'Confirmed manipulation scheme. Report generated.',
   },
   {
     id: 'ALT_004',
@@ -75,7 +88,7 @@ const mockAlerts = [
     volume: '$34,560',
     exchanges: ['Gate.io', 'MEXC'],
     affectedWallets: 23,
-    investigationNotes: ''
+    investigationNotes: '',
   },
   {
     id: 'ALT_005',
@@ -90,14 +103,70 @@ const mockAlerts = [
     volume: '$234,670',
     exchanges: ['Coinbase', 'Binance', 'Uniswap'],
     affectedWallets: 3,
-    investigationNotes: 'Legitimate arbitrage activity confirmed'
-  }
+    investigationNotes: 'Legitimate arbitrage activity confirmed',
+  },
 ];
 
-import { type Alert } from '../utils/api';
+// Normalized alert shape for the UI
+type UiAlert = {
+  id: string;
+  type: keyof typeof alertTypes | string;
+  title: string;
+  description: string;
+  token: string;
+  severity: 'high' | 'medium' | 'low' | string;
+  confidence: number;
+  timestamp: string;
+  status: 'active' | 'investigating' | 'resolved' | 'dismissed' | string;
+  volume: string;
+  exchanges: string[];
+  affectedWallets: number;
+  investigationNotes: string;
+};
 
 interface AlertsPanelProps {
-  alerts: Alert[];
+  alerts: ApiAlert[]; // live alerts from backend (App passes liveAlerts here)
+}
+
+// Map back-end Alert → UiAlert, with safe defaults
+function mapApiAlert(alert: ApiAlert): UiAlert {
+  return {
+    id:
+      (alert as any).alert_id ||
+      (alert as any).id ||
+      `${alert.token || 'ALERT'}-${alert.timestamp || Date.now()}`,
+    type: (alert.type as any) || 'wash_trading',
+    title:
+      (alert as any).title ||
+      (alert.type === 'self_trade'
+        ? 'Self-Trade Detected'
+        : 'Suspicious Trading Activity'),
+    description:
+      alert.description || 'Suspicious trading activity detected by detection engine.',
+    token: alert.token || 'UNKNOWN',
+    severity: (alert.severity as any) || 'medium',
+    confidence:
+      typeof (alert as any).confidence === 'number'
+        ? (alert as any).confidence
+        : 80,
+    timestamp: alert.timestamp || new Date().toISOString(),
+    status: 'active', // you can upgrade this later when you add workflow states
+    volume:
+      typeof (alert as any).volume === 'string'
+        ? (alert as any).volume
+        : (alert as any).volume != null
+        ? String((alert as any).volume)
+        : 'N/A',
+    exchanges: (alert as any).exchanges
+      ? (alert as any).exchanges
+      : (alert as any).exchange
+      ? [(alert as any).exchange]
+      : [],
+    affectedWallets: Array.isArray((alert as any).affected_addresses)
+      ? (alert as any).affected_addresses.length
+      : (alert as any).affectedWallets || 0,
+    investigationNotes: (alert as any).investigationNotes || '',
+  };
 }
 
 export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
@@ -105,34 +174,53 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedAlert, setSelectedAlert] = useState(null);
+  const [selectedAlert, setSelectedAlert] = useState<UiAlert | null>(null);
 
-  const filteredAlerts = mockAlerts.filter(alert => {
-    const matchesSeverity = filterSeverity === 'all' || alert.severity === filterSeverity;
-    const matchesStatus = filterStatus === 'all' || alert.status === filterStatus;
+  // Use live alerts if we have them; otherwise fall back to mockAlerts
+  const uiAlerts: UiAlert[] =
+    liveAlerts && liveAlerts.length > 0
+      ? liveAlerts.map(mapApiAlert)
+      : mockAlerts;
+
+  const filteredAlerts = uiAlerts.filter((alert) => {
+    const matchesSeverity =
+      filterSeverity === 'all' || alert.severity === filterSeverity;
+    const matchesStatus =
+      filterStatus === 'all' || alert.status === filterStatus;
     const matchesType = filterType === 'all' || alert.type === filterType;
-    const matchesSearch = alert.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         alert.token.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         alert.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      alert.title.toLowerCase().includes(term) ||
+      alert.token.toLowerCase().includes(term) ||
+      alert.id.toLowerCase().includes(term);
     return matchesSeverity && matchesStatus && matchesType && matchesSearch;
   });
 
   const getSeverityBadgeVariant = (severity: string) => {
     switch (severity) {
-      case 'high': return 'destructive';
-      case 'medium': return 'secondary';
-      case 'low': return 'outline';
-      default: return 'outline';
+      case 'high':
+        return 'destructive';
+      case 'medium':
+        return 'secondary';
+      case 'low':
+        return 'outline';
+      default:
+        return 'outline';
     }
   };
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
-      case 'active': return 'destructive';
-      case 'investigating': return 'secondary';
-      case 'resolved': return 'default';
-      case 'dismissed': return 'outline';
-      default: return 'outline';
+      case 'active':
+        return 'destructive';
+      case 'investigating':
+        return 'secondary';
+      case 'resolved':
+        return 'default';
+      case 'dismissed':
+        return 'outline';
+      default:
+        return 'outline';
     }
   };
 
@@ -153,11 +241,14 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
   };
 
   const alertCounts = {
-    total: mockAlerts.length,
-    active: mockAlerts.filter(a => a.status === 'active').length,
-    high: mockAlerts.filter(a => a.severity === 'high').length,
-    investigating: mockAlerts.filter(a => a.status === 'investigating').length
+    total: uiAlerts.length,
+    active: uiAlerts.filter((a) => a.status === 'active').length,
+    high: uiAlerts.filter((a) => a.severity === 'high').length,
+    investigating: uiAlerts.filter((a) => a.status === 'investigating').length,
   };
+
+  // Live feed = same data source, just a different layout
+  const liveFeedAlerts = uiAlerts.slice(0, 10);
 
   return (
     <div className="space-y-6">
@@ -165,7 +256,9 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Alert Management</h2>
-          <p className="text-slate-600">Monitor and investigate suspicious trading activity alerts</p>
+          <p className="text-slate-600">
+            Monitor and investigate suspicious trading activity alerts
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline">
@@ -194,7 +287,9 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
             <Activity className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{alertCounts.active}</div>
+            <div className="text-2xl font-bold text-red-600">
+              {alertCounts.active}
+            </div>
             <p className="text-xs text-slate-500">Require attention</p>
           </CardContent>
         </Card>
@@ -216,7 +311,9 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
             <Clock className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{alertCounts.investigating}</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {alertCounts.investigating}
+            </div>
             <p className="text-xs text-slate-500">Being reviewed</p>
           </CardContent>
         </Card>
@@ -286,21 +383,39 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
         </Card>
 
         <TabsContent value="active" className="space-y-4">
-          {filteredAlerts.filter(alert => alert.status === 'active').map((alert) => (
-            <AlertCard key={alert.id} alert={alert} onSelect={setSelectedAlert} />
-          ))}
+          {filteredAlerts
+            .filter((alert) => alert.status === 'active')
+            .map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onSelect={setSelectedAlert}
+              />
+            ))}
         </TabsContent>
 
         <TabsContent value="investigating" className="space-y-4">
-          {filteredAlerts.filter(alert => alert.status === 'investigating').map((alert) => (
-            <AlertCard key={alert.id} alert={alert} onSelect={setSelectedAlert} />
-          ))}
+          {filteredAlerts
+            .filter((alert) => alert.status === 'investigating')
+            .map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onSelect={setSelectedAlert}
+              />
+            ))}
         </TabsContent>
 
         <TabsContent value="resolved" className="space-y-4">
-          {filteredAlerts.filter(alert => alert.status === 'resolved').map((alert) => (
-            <AlertCard key={alert.id} alert={alert} onSelect={setSelectedAlert} />
-          ))}
+          {filteredAlerts
+            .filter((alert) => alert.status === 'resolved')
+            .map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onSelect={setSelectedAlert}
+              />
+            ))}
         </TabsContent>
 
         <TabsContent value="live" className="space-y-4">
@@ -310,16 +425,23 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
               <CardDescription>Real-time alerts as they are detected</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {liveAlerts.length > 0 ? (
-                liveAlerts.map((alert) => (
-                  <div key={alert.alert_id} className="p-3 border border-slate-200 rounded-lg bg-red-50">
+              {liveFeedAlerts.length > 0 ? (
+                liveFeedAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="p-3 border border-slate-200 rounded-lg bg-red-50"
+                  >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start space-x-3">
                         <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />
                         <div>
-                          <p className="font-medium text-slate-900">{alert.description}</p>
+                          <p className="font-medium text-slate-900">
+                            {alert.description}
+                          </p>
                           <div className="flex items-center space-x-2 mt-1">
-                            <Badge variant="destructive">{alert.type?.toUpperCase()}</Badge>
+                            <Badge variant="destructive">
+                              {alert.type.toString().toUpperCase()}
+                            </Badge>
                             <Badge variant="outline">{alert.token}</Badge>
                             <span className="text-sm text-slate-500">
                               {new Date(alert.timestamp).toLocaleTimeString()}
@@ -347,10 +469,59 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
   );
 }
 
-function AlertCard({ alert, onSelect }) {
-  const AlertIcon = alertTypes[alert.type]?.icon || AlertTriangle;
-  const iconColor = alertTypes[alert.type]?.color || 'text-slate-500';
-  const bgColor = alertTypes[alert.type]?.bgColor || 'bg-slate-50';
+interface AlertCardProps {
+  alert: UiAlert;
+  onSelect: (alert: UiAlert) => void;
+}
+
+function AlertCard({ alert, onSelect }: AlertCardProps) {
+  const AlertIcon = (alertTypes as any)[alert.type]?.icon || AlertTriangle;
+  const iconColor = (alertTypes as any)[alert.type]?.color || 'text-slate-500';
+  const bgColor = (alertTypes as any)[alert.type]?.bgColor || 'bg-slate-50';
+
+  const getSeverityBadgeVariant = (severity: string) => {
+    switch (severity) {
+      case 'high':
+        return 'destructive';
+      case 'medium':
+        return 'secondary';
+      case 'low':
+        return 'outline';
+      default:
+        return 'outline';
+    }
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'destructive';
+      case 'investigating':
+        return 'secondary';
+      case 'resolved':
+        return 'default';
+      case 'dismissed':
+        return 'outline';
+      default:
+        return 'outline';
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+
+    if (diffMins < 60) {
+      return `${diffMins} minutes ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours} hours ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -391,12 +562,15 @@ function AlertCard({ alert, onSelect }) {
               </div>
               <div className="mt-3">
                 <p className="text-xs text-slate-500">
-                  {formatTimestamp(alert.timestamp)} • Exchanges: {alert.exchanges.join(', ')}
+                  {formatTimestamp(alert.timestamp)} • Exchanges:{' '}
+                  {alert.exchanges.join(', ')}
                 </p>
               </div>
               {alert.investigationNotes && (
                 <div className="mt-3 p-2 bg-blue-50 rounded text-sm">
-                  <p className="text-blue-800">Notes: {alert.investigationNotes}</p>
+                  <p className="text-blue-800">
+                    Notes: {alert.investigationNotes}
+                  </p>
                 </div>
               )}
             </div>
@@ -415,39 +589,4 @@ function AlertCard({ alert, onSelect }) {
       </CardContent>
     </Card>
   );
-
-  function getSeverityBadgeVariant(severity: string) {
-    switch (severity) {
-      case 'high': return 'destructive';
-      case 'medium': return 'secondary';
-      case 'low': return 'outline';
-      default: return 'outline';
-    }
-  }
-
-  function getStatusBadgeVariant(status: string) {
-    switch (status) {
-      case 'active': return 'destructive';
-      case 'investigating': return 'secondary';
-      case 'resolved': return 'default';
-      case 'dismissed': return 'outline';
-      default: return 'outline';
-    }
-  }
-
-  function formatTimestamp(timestamp: string) {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-
-    if (diffMins < 60) {
-      return `${diffMins} minutes ago`;
-    } else if (diffHours < 24) {
-      return `${diffHours} hours ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
-  }
 }

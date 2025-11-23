@@ -1,9 +1,26 @@
-import WebSocket, { RawData } from 'ws';
+import WebSocket from 'ws';
 import axios from 'axios';
 
-const BACKEND_API = process.env.BACKEND_API ?? 'http://localhost:8000/ingest/trades';
+const BACKEND_API =
+  process.env.BACKEND_API ?? 'http://localhost:8000/ingest/trades';
 
-interface TradeIn {
+// --------- Types ---------
+
+type BinanceTradeMsg = {
+  t: number;    // trade id
+  T: number;    // trade time (ms)
+  q: string;    // quantity
+  p: string;    // price
+  m: boolean;   // is buyer the market maker
+  a: number;    // aggregate trade id
+};
+
+type StreamPayload = {
+  stream: string;        // e.g. "btcusdt@trade"
+  data: BinanceTradeMsg; // the trade payload
+};
+
+type Trade = {
   trade_id: string;
   timestamp: string;
   token: string;
@@ -13,9 +30,12 @@ interface TradeIn {
   price: number;
   exchange: string;
   tx_hash: string;
-}
+  metadata?: Record<string, unknown>;
+};
 
-// 🔹 Real Binance US streams (adjust/remove any that Binance US doesn’t support)
+// --------- Streams & display tokens ---------
+
+// Real Binance US streams
 const STREAMS = [
   'btcusdt@trade',
   'ethusdt@trade',
@@ -29,17 +49,15 @@ const STREAMS = [
   'linkusdt@trade',
 ];
 
-// 🔹 Names you want to see in the UI (aliases)
-// Some map 1:1 (BTCUSDT → BTCUSDT), others are “marketing” labels (MOONWELL, HYPERLIQUID)
+
 const DISPLAY_TOKENS = [
-  'BTCUSDT',
-  'ETHUSDT',
-  'SOLUSDT',
-  'SHIBA',        // from SHIBUSDT stream
-  'DOGE',         // from DOGEUSDT stream
-  'XRP',
-  'MOONWELL',     // alias from any real stream
-  'HYPERLIQUID',  // alias from any real stream
+  'BTCUSDT', 'BTCUSDT', 'BTCUSDT',
+  'XRP', 'XRP',
+  'TRUMP', 'TRUMP',
+  'SHIBA',       // from SHIBUSDT stream
+  'DOGE',        // from DOGEUSDT stream
+  'MOONWELL',    // alias from any real stream
+  'HYPERLIQUID', // alias from any real stream
   'ADA',
   'AVAX',
 ];
@@ -48,6 +66,8 @@ const WS_URL =
   'wss://stream.binance.us:9443/stream?streams=' + STREAMS.join('/');
 
 let counter = 0;
+
+// --------- WebSocket connection ---------
 
 const ws = new WebSocket(WS_URL);
 
@@ -58,24 +78,46 @@ ws.on('open', () => {
   );
 });
 
-ws.on('message', async (data: RawData) => {
+// Helper: create a BIG notional trade (50M–200M USD)
+function createBigVolumeTrade(base: Trade): Trade {
+  const minNotional = 50_000_000;   // 50M
+  const maxNotional = 200_000_000;  // 200M
+  const notional =
+    minNotional + Math.random() * (maxNotional - minNotional);
+
+  const price = base.price || 1;
+  const amount = +(notional / price).toFixed(3); // adjust so price * amount ≈ notional
+
+  return {
+    ...base,
+    amount,
+    exchange: 'BinanceUS-demo',
+    trade_id: base.trade_id + '-BIG',
+    metadata: {
+      ...(base.metadata || {}),
+      demo_pattern: 'BIG_NOTIONAL',
+      target_notional: notional,
+    },
+  };
+}
+
+ws.on('message', async (raw: WebSocket.RawData) => {
   counter++;
 
-  const payload = JSON.parse(data.toString());
-  // For /stream endpoint: { stream: "btcusdt@trade", data: {...trade...} }
+  const payload = JSON.parse(raw.toString()) as StreamPayload;
   const msg = payload.data;
-  const streamName: string = payload.stream; // e.g. "btcusdt@trade"
-  const baseSymbol = streamName.split('@')[0].toUpperCase(); // e.g. "BTCUSDT"
+  const streamName = payload.stream; // e.g. "btcusdt@trade"
+  const baseSymbol = streamName.split('@')[0].toUpperCase(); // "BTCUSDT"
 
-  // Pick a display token (this gives you SHIBA / DOGE / MOONWELL / HYPERLIQUID in the UI)
+  // Rotate through DISPLAY_TOKENS so UI shows BTCUSDT / XRP / TRUMP / etc.
   const displayToken =
     DISPLAY_TOKENS[counter % DISPLAY_TOKENS.length] ?? baseSymbol;
 
-  // Base trade from the real Binance US stream
-  const baseTrade: TradeIn = {
+  // Base trade from real Binance US stream
+  const baseTrade: Trade = {
     trade_id: msg.t.toString(),
     timestamp: new Date(msg.T).toISOString(),
-    token: displayToken, // what the dashboard will see
+    token: displayToken,
     from_address: msg.m ? 'maker' : 'taker',
     to_address: msg.m ? 'taker' : 'maker',
     amount: parseFloat(msg.q),
@@ -84,31 +126,57 @@ ws.on('message', async (data: RawData) => {
     tx_hash: msg.a.toString(),
   };
 
-  let trade: TradeIn = baseTrade;
+  let trade: Trade = baseTrade;
 
-  //  Every 15th trade → simulate a SELF-TRADE (same wallet)
+  
+
+  // 1) Every 15th trade → BIG SELF-TRADE (any token)
   if (counter % 15 === 0) {
-    trade = {
+    trade = createBigVolumeTrade({
       ...baseTrade,
       from_address: 'walletSelf',
       to_address: 'walletSelf',
-      amount: 0.5,
-      exchange: 'BinanceUS-demo',
-    };
-    console.log('[Ingestion] Injected SELF-TRADE demo event for', trade.token);
+    });
+
+    const notional = trade.amount * trade.price;
+    console.log(
+      '[Ingestion] Injected BIG SELF-TRADE demo for',
+      trade.token,
+      '≈',
+      Math.round(notional).toLocaleString(),
+      'USD'
+    );
   }
-  // Every 25th trade → simulate a big VOLUME SPIKE
+  // 2) Every 25th trade → BIG VOLUME SPIKE between two wallets
   else if (counter % 25 === 0) {
-    trade = {
+    trade = createBigVolumeTrade({
       ...baseTrade,
       from_address: 'walletBig',
       to_address: 'walletOther',
-      amount: baseTrade.amount * 500 || 5,
-      exchange: 'BinanceUS-demo',
-    };
+    });
+
+    const notional = trade.amount * trade.price;
     console.log(
-      '[Ingestion] Injected VOLUME-SPIKE demo event for',
-      trade.token
+      '[Ingestion] Injected BIG VOLUME-SPIKE demo for',
+      trade.token,
+      '≈',
+      Math.round(notional).toLocaleString(),
+      'USD'
+    );
+  }
+  
+  else if (displayToken === 'TRUMP' && counter % 7 === 0) {
+    trade = createBigVolumeTrade({
+      ...baseTrade,
+      from_address: 'walletTrump',
+      to_address: 'walletTrump',
+    });
+
+    const notional = trade.amount * trade.price;
+    console.log(
+      '[Ingestion] Injected TRUMP SELF-TRADE demo ≈',
+      Math.round(notional).toLocaleString(),
+      'USD'
     );
   }
 
@@ -120,7 +188,7 @@ ws.on('message', async (data: RawData) => {
   }
 });
 
-ws.on('error', (err: Error) => {
+ws.on('error', (err) => {
   console.error('[Ingestion] WebSocket error:', err);
 });
 
