@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-# We only need the schema models here for FastAPI response_model / request bodies
+
 from .schemas import (
     TradeIn,
     IngestRequest,

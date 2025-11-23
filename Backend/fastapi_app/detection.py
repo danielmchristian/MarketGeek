@@ -39,7 +39,7 @@ def detect_self_trades(trades: List[Trade]) -> List[Alert]:
 
         alerts.append(
             Alert(
-                alert_id=_id(),  # ✅ USE _id(), NOT id()
+                alert_id=_id(),  
                 type="self_trade",
                 severity="high",
                 confidence=0.9,

@@ -51,10 +51,7 @@ type DashboardState = {
   isLoading: boolean;
 };
 
-/**
- * Fallback sample data so the chart never looks empty in a demo
- * (only used if backend returns no volume/anomaly data)
- */
+
 const SAMPLE_TRANSACTION_DATA = [
   { time: '09:00', volume: 20, normal: 15, alerts: 1, threshold: 18 },
   { time: '10:00', volume: 55, normal: 25, alerts: 3, threshold: 30 },
@@ -130,7 +127,7 @@ export function DashboardOverview({ systemHealth }: DashboardOverviewProps) {
         }))
       : SAMPLE_TRANSACTION_DATA;
 
-  // ============================
+ 
   // 2) Risk distribution donut
   // ============================
 
@@ -224,7 +221,7 @@ export function DashboardOverview({ systemHealth }: DashboardOverviewProps) {
           </CardContent>
         </Card>
 
-        {/* 🔴 Wash trades metric – THIS is your “wash sale” showcase */}
+        {/* Wash trades metric – THIS is your “wash sale” showcase */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Wash Trades Detected</CardTitle>

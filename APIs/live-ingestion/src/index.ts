@@ -49,9 +49,7 @@ const STREAMS = [
   'linkusdt@trade',
 ];
 
-// Names you want to see in the UI
-// BTCUSDT & XRP repeated so they appear more often
-// TRUMP repeated so it gets lots of self-trading
+
 const DISPLAY_TOKENS = [
   'BTCUSDT', 'BTCUSDT', 'BTCUSDT',
   'XRP', 'XRP',

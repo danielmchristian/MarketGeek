@@ -71,7 +71,7 @@ export function AuthComponent() {
         throw signInError;
       }
 
-      // Optional: redirect or show success here
+      
     } catch (error: any) {
       console.error('Sign up error:', error);
       setError(error?.message || 'Sign up failed');
@@ -95,7 +95,6 @@ export function AuthComponent() {
         throw error;
       }
 
-      // Optional: redirect to dashboard after login
     } catch (error: any) {
       console.error('Sign in error:', error);
       setError(error?.message || 'Sign in failed');

@@ -44,7 +44,7 @@ class Alert(BaseModel):
     description: str
     timestamp: datetime    # Pydantic will parse ISO strings
     affected_addresses: List[str]
-    volume: float          # ✅ MUST be float to match detection.py
+    volume: float          # MUST be float to match detection.py
     exchanges: List[str]
 
 

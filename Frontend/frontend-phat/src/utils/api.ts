@@ -1,7 +1,6 @@
 // src/utils/api.ts
 
-// ✅ Make sure this matches how you open /health in the browser.
-// If you use 127.0.0.1, then also put that in CORS origins in the backend.
+
 const API_BASE_URL =
   (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -101,14 +100,13 @@ export interface VolumeAnomaly {
 export const apiClient = {
   // ---- Token statistics for dashboard ----
   async getTokenSummaries(): Promise<TokenSummary[]> {
-    // your backend has: tokens_summary(since_minutes: int = 60)
-    // so calling without query param is fine; default is 60.
+    
     return apiCall<TokenSummary[]>('/tokens/summary');
   },
 
   // ---- Self trade detection (stored trades) ----
   async detectSelfTrades(_params?: { timeframe?: string }) {
-    // backend: @app.post("/detect/self-trades") – no body expected
+    
     return apiCall<{ alerts: Alert[] }>('/detect/self-trades', {
       method: 'POST',
       // no body so FastAPI doesn't need to parse anything
@@ -172,7 +170,7 @@ export const apiClient = {
     };
   },
 
-  // 🔥 Binance one-click wash-trading detection
+  // Binance one-click wash-trading detection
   async detectWashTradingFromBinance(symbol: string, limit: number) {
     const query = `?symbol=${encodeURIComponent(symbol)}&limit=${limit}&use_demo_on_error=true`;
     return apiCall<Alert[]>(`/detect/wash-trading/binance${query}`, {

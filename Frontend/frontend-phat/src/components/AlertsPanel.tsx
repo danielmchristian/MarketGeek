@@ -107,7 +107,7 @@ const mockAlerts = [
   },
 ];
 
-// 👉 Normalized alert shape for the UI
+// Normalized alert shape for the UI
 type UiAlert = {
   id: string;
   type: keyof typeof alertTypes | string;
@@ -128,7 +128,7 @@ interface AlertsPanelProps {
   alerts: ApiAlert[]; // live alerts from backend (App passes liveAlerts here)
 }
 
-// 🔁 Map back-end Alert → UiAlert, with safe defaults
+// Map back-end Alert → UiAlert, with safe defaults
 function mapApiAlert(alert: ApiAlert): UiAlert {
   return {
     id:
@@ -176,7 +176,7 @@ export function AlertsPanel({ alerts: liveAlerts }: AlertsPanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAlert, setSelectedAlert] = useState<UiAlert | null>(null);
 
-  // ✅ Use live alerts if we have them; otherwise fall back to mockAlerts
+  // Use live alerts if we have them; otherwise fall back to mockAlerts
   const uiAlerts: UiAlert[] =
     liveAlerts && liveAlerts.length > 0
       ? liveAlerts.map(mapApiAlert)
