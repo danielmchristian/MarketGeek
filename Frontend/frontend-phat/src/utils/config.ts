@@ -2,12 +2,31 @@
 // Configuration for WashGuard Pro API client
 // Following UNC Charlotte ITSC 4155 guidelines for environment management
 
+/// <reference types="vite/client" />
+
 export interface AppConfig {
   apiBaseUrl: string;
   isDevelopment: boolean;
   isProduction: boolean;
   enableMockData: boolean;
 }
+
+// API Configuration - Use the main config below instead
+// export const API_BASE_URL = ... (moved to config object)
+
+// Other configuration constants
+export const APP_CONFIG = {
+  name: 'MarketGeek',
+  version: '1.0.0',
+  environment: 'development'
+};
+
+// API endpoints
+export const API_ENDPOINTS = {
+  HEALTH: '/health',
+  TOKEN: '/token',
+  PROTECTED_DATA: '/protected_data'
+};
 
 // Detect environment and set API URL accordingly
 const getApiBaseUrl = (): string => {
@@ -29,9 +48,8 @@ const getApiBaseUrl = (): string => {
     return 'http://localhost:8000';
   }
 
-  // Production environment
-  // TODO: replace with your real deployed backend URL
-  return 'https://api.washguard.pro';
+  // Production environment - Azure Web App deployment
+  return '/api';  // Relative path for same-domain deployment
 };
 
 const getEnvironmentInfo = () => {
@@ -78,5 +96,8 @@ export const testApiConnection = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// Export for backward compatibility
+export const API_BASE_URL = config.apiBaseUrl;
 
 export default config;

@@ -1,0 +1,30 @@
+# Stage 1: Build React frontend
+FROM node:18-alpine AS frontend-build
+
+WORKDIR /frontend
+COPY Frontend/frontend-phat/package*.json ./
+RUN npm install
+
+COPY Frontend/frontend-phat/ ./
+RUN npm run build
+
+# Stage 2: Python backend with static files
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install python deps
+COPY Backend/fastapi_app/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend app
+COPY Backend/fastapi_app/ /app
+
+# Copy built frontend into FastAPI static folder
+COPY --from=frontend-build /frontend/dist ./static
+
+# Expose API port
+EXPOSE 8000
+
+# Start FastAPI
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
