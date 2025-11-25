@@ -14,14 +14,17 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install python deps
-COPY Backend/fastapi_app/requirements.txt ./requirements.txt
+COPY Backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend app
-COPY Backend/fastapi_app/ /app
+COPY Backend/ /app
+
+# Copy debug file
+COPY debug.html /app/
 
 # Copy built frontend into FastAPI static folder
-COPY --from=frontend-build /frontend/dist ./static
+COPY --from=frontend-build /frontend/build ./static
 
 # Expose API port
 EXPOSE 8000

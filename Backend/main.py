@@ -29,6 +29,9 @@ app.add_middleware(
 
 # --- Mount Static Files (React Frontend) ---
 if os.path.exists("static"):
+    # Mount static assets (JS, CSS files) with proper MIME types
+    app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+    # Mount the static directory for any other static files
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- Dummy Database and User Schema (Replace with real DB in production) ---
@@ -71,12 +74,21 @@ async def read_protected_data(user_id: int = Depends(get_current_user_id)) -> Di
     """A route only accessible with a valid JWT."""
     return {"message": "Welcome to the protected area!", "user_id": user_id}
 
+# --- Debug route ---
+@app.get("/debug")
+async def debug_page():
+    return FileResponse("debug.html") if os.path.exists("debug.html") else {"message": "Debug page not found"}
+
 # --- Serve React Frontend (Catch-all route - must be last) ---
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
     # Don't serve frontend for API routes
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # Debug mode - serve debug page if React fails
+    if full_path == "debug":
+        return FileResponse("debug.html") if os.path.exists("debug.html") else {"message": "Debug page not found"}
     
     # Serve the React app
     if os.path.exists("static/index.html"):

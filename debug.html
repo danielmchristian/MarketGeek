@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test</title>
+</head>
+<body>
+    <div id="root">
+        <h1>React Debug Test</h1>
+        <p>If you see this, the container is working!</p>
+        <script>
+            console.log('🔍 Debug: HTML loaded');
+            
+            // Test API connection
+            fetch('/api/health')
+                .then(res => res.json())
+                .then(data => {
+                    console.log('✅ API working:', data);
+                    document.body.innerHTML += '<p style="color: green;">✅ API Health Check: ' + JSON.stringify(data) + '</p>';
+                })
+                .catch(err => {
+                    console.log('❌ API failed:', err);
+                    document.body.innerHTML += '<p style="color: red;">❌ API Error: ' + err.message + '</p>';
+                });
+                
+            // Test if React bundle loads
+            const script = document.createElement('script');
+            script.src = '/assets/index-CSROg8yQ.js';
+            script.onload = () => console.log('✅ React bundle loaded');
+            script.onerror = () => console.log('❌ React bundle failed');
+            document.head.appendChild(script);
+        </script>
+    </div>
+</body>
+</html>
