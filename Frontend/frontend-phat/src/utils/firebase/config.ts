@@ -5,12 +5,12 @@ import { getFirestore } from 'firebase/firestore';
 
 // Your Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyCm3GPjMwdCdIqe17pFJJD8wOR4v_srWhM",
-  authDomain: "marketgeek-f69ba.firebaseapp.com",
-  projectId: "marketgeek-f69ba",
-  storageBucket: "marketgeek-f69ba.firebasestorage.app",
-  messagingSenderId: "1052565875000",
-  appId: "1:1052565875000:web:fffd25236fa54721a8b9cd"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase

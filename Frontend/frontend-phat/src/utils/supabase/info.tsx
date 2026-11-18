@@ -1,4 +1,4 @@
 /* SUPABASE PROJECT CONFIGURATION */
 
-export const projectId = "wwkgdx1khfbkffwpnqxy"
-export const publicAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3a2dkeGlraGZwa2Zmd3BucXh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NjA2OTksImV4cCI6MjA3OTIzNjY5OX0.ZOBQWVqqeFMxACuZYrodZ8EXbrQrLm_klFcqyTw0OSc"
+export const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string
+export const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string

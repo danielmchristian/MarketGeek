@@ -35,7 +35,7 @@ services:
     environment:
       POSTGRES_DB: washguard
       POSTGRES_USER: washguard
-      POSTGRES_PASSWORD: washguard123
+      POSTGRES_PASSWORD: changeme
     ports:
       - "5432:5432"
     volumes:

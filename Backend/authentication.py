@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
@@ -6,7 +7,7 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 
 # --- Configuration ---
-SECRET_KEY = "YOUR_SUPER_SECRET_KEY"  # CHANGE THIS! Use an env var in a real app.
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-insecure-change-me")  # set SECRET_KEY in production
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 # End of Configuration
