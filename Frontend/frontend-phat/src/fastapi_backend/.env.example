@@ -11,7 +11,7 @@ PORT=8000
 WORKERS=4
 
 # Database Configuration (Optional - using in-memory for demo)
-DATABASE_URL=postgresql://washguard:washguard123@localhost:5432/washguard
+DATABASE_URL=postgresql://washguard:changeme@localhost:5432/washguard
 
 # Redis Configuration (Optional - for caching)
 REDIS_URL=redis://localhost:6379/0
